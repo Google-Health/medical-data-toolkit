@@ -1,0 +1,50 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+classifier_llm_client:
+  type: "GeminiClient"
+  parameters:
+    model: "gemini-3.1-flash-lite-preview"
+    api_key_env: "GEMINI_API_KEY"
+
+extractor_llm_client:
+  type: "GeminiClient"
+  parameters:
+    model: "gemini-3-flash-preview"
+    api_key_env: "GEMINI_API_KEY"
+
+supported_types:
+  - "LABORATORY_REPORT"
+
+# Policy for validating documents with unsupported types.
+# ACCEPT_ALL: Accepts the document regardless of unsupported types.
+# ALLOW_UNSUPPORTED_NON_MEDICAL: Process only supported segments if unsupported types are only non-medical (OTHER).
+# ALLOW_ONLY_SUPPORTED: Discard the document if any unsupported type is present.
+document_standardization_policy: ACCEPT_ALL
+
+# When true, attaches the entire source document (base64 encoded) to the first
+# generated FHIR bundle that contains a valid patient/subject.
+# NOTE: Avoid enabling this if the uploaded document contains data for multiple
+# patients, as it will link the entire document to only the first identified patient.
+ATTACH_DOCUMENT_TO_BUNDLE: false
+
+# Path to the CSV file containing LOINC analytes index data.
+# This file is required for terminology mapping (e.g. mapping lab tests to LOINC codes).
+# In a Docker environment, this file is typically not part of the codebase and should be:
+# 1. Mounted as a volume from the host to the container (e.g., -v /host/path/to/loinc_analaytes_index.csv:/data/loinc_analaytes_index.csv).
+# 2. Or downloaded during container startup by an entrypoint script.
+#
+# IMPORTANT: If mounting from host, ensure the file has read permissions for others
+# (e.g., `chmod 644 /path/to/loinc_analaytes_index.csv`) and the containing directory is accessible
+# (e.g., `chmod 755 /path/to/dir`) so that the non-root user in the container can read it.
+loinc_analaytes_index_csv_path: "/data/loinc_analaytes_index.csv"

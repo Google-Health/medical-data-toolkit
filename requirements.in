@@ -1,0 +1,35 @@
+# Do not modify requirements.txt directly. Run
+# generate_requirements.sh to build requirements.txt from this file.
+
+absl-py==2.4.0
+dacite==1.9.2
+flask==3.1.3
+google-auth==2.49.2
+google-genai==1.73.1
+gunicorn==25.3.0
+litellm==1.83.14
+pandas==3.0.2
+pillow==12.2.0
+# Downgraded from 7.34.1 to fix compatibility with google-fhir-r4.
+# Protobuf 7.x uses UPB backend by default, which removes attributes like '.label'
+# on descriptors that the FHIR library relies on.
+protobuf==4.25.3
+pydantic==2.12.5  # version 2.12.5 is required by litellm 1.83.14
+pypdfium2==5.7.1
+pyyaml==6.0.3
+requests==2.33.1
+tqdm==4.67.3
+
+# requirements for google-fhir-r4 and google-fhir-core
+antlr4-python3-runtime==4.13.2
+stringcase==1.2.0
+immutabledict==4.3.1
+python-dateutil==2.9.0.post0
+
+# Requirement generation does not automtically add the dependencies below.
+# They must be manually added.
+# google-fhir-core==0.11.0 \
+#    --hash=sha256:1e09581efa9fa0b92985098f1a69c9ef3b2ecf889f4d16386398d13556114102
+#google-fhir-r4==0.11.0 \
+#    --hash=sha256:53a6d75b8db786fe6a4481e08d31274a2d9f72fd754b73e370abc5bbe9019315
+

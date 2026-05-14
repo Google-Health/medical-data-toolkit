@@ -1,0 +1,508 @@
+{
+  "description": "ABDM Lab Report Example 2 - Multiple Tests and Panels",
+  "raw_json": {
+    "patient": {
+      "name": "Jane Doe",
+      "identifiers": {
+        "mr": "MR456"
+      }
+    },
+    "practitioner": {
+      "name": "Dr. Adams",
+      "identifiers": {
+        "md": "MD456"
+      }
+    },
+    "service_provider": {
+      "name": "City Lab",
+      "identifiers": {
+        "prn": "PRN456"
+      }
+    },
+    "lab_tests": [
+      {
+        "core_analyte": "Hemoglobin",
+        "name": "Hemoglobin",
+        "result": "14",
+        "unit": "g/dL",
+        "loinc_code": "718-7",
+        "loinc_common_name": "Hemoglobin [Mass/volume] in Blood",
+        "panel_name": "CBC panel - Blood by Automated count",
+        "panel_loinc_code": "58410-2"
+      },
+      {
+        "core_analyte": "WBC",
+        "name": "WBC",
+        "result": "7000",
+        "unit": "/uL",
+        "loinc_code": "6690-2",
+        "loinc_common_name": "Leukocytes [#/volume] in Blood by Automated count",
+        "panel_name": "CBC panel - Blood by Automated count",
+        "panel_loinc_code": "58410-2"
+      },
+      {
+        "core_analyte": "Cholesterol",
+        "name": "Cholesterol",
+        "result": "200",
+        "unit": "mg/dL",
+        "loinc_code": "2093-3",
+        "loinc_common_name": "Cholesterol [Mass/volume] in Serum or Plasma"
+      }
+    ],
+    "sample_collection_time": "2026-02-01T10:00:00+00:00"
+  },
+  "fhir_json": {
+    "resourceType": "Bundle",
+    "id": "e1a2b3c4-d5e6-4f7f-b89a-a0b1c2d3e4f5",
+    "identifier": {
+      "system": "http://hip.in",
+      "value": "e1a2b3c4-d5e6-4f7f-b89a-a0b1c2d3e4f5"
+    },
+    "type": "document",
+    "timestamp": "2026-04-27T16:10:28Z",
+    "meta": {
+      "profile": [
+        "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+      ],
+      "versionId": "1"
+    },
+    "entry": [
+      {
+        "fullUrl": "urn:uuid:a20cd505-e823-4249-912e-4e3cf8fb4e8d",
+        "resource": {
+          "resourceType": "Composition",
+          "id": "a20cd505-e823-4249-912e-4e3cf8fb4e8d",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord"
+            ]
+          },
+          "status": "final",
+          "type": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "721981007",
+                "display": "Diagnostic studies report"
+              }
+            ]
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "date": "2026-02-01T10:00:00Z",
+          "author": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            }
+          ],
+          "title": "Diagnostic Report Record",
+          "section": [
+            {
+              "title": "Diagnostic Report",
+              "entry": [
+                {
+                  "reference": "urn:uuid:ca41d234-3afc-48e3-b8b5-586a44d9df54",
+                  "type": "DiagnosticReport"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184",
+        "resource": {
+          "resourceType": "Patient",
+          "id": "c406296f-3e76-4958-9a3a-f44f213c6184",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "MR",
+                    "display": "Medical Record Number"
+                  }
+                ]
+              },
+              "system": "http://hospital.smarthealthit.org",
+              "value": "MR456"
+            }
+          ],
+          "name": [
+            {
+              "text": "Jane Doe",
+              "family": "Doe",
+              "given": ["Jane"]
+            }
+          ],
+          "gender": "unknown"
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2",
+        "resource": {
+          "resourceType": "Practitioner",
+          "id": "f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "MD",
+                    "display": "Medical License number"
+                  }
+                ]
+              },
+              "system": "https://doctor.ndhm.gov.in",
+              "value": "MD456"
+            }
+          ],
+          "name": [
+            {
+              "text": "Dr. Adams",
+              "family": "Adams",
+              "prefix": ["Dr."]
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:b859a2e3-0278-4472-a148-29c81ab92589",
+        "resource": {
+          "resourceType": "Organization",
+          "id": "b859a2e3-0278-4472-a148-29c81ab92589",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+            ]
+          },
+          "active": true,
+          "name": "City Lab",
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "PRN",
+                    "display": "Provider number"
+                  }
+                ]
+              },
+              "system": "https://facility.ndhm.gov.in",
+              "value": "PRN456"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:e927aa3e-4f87-4a06-bb58-cd3e6a7df8df",
+        "resource": {
+          "resourceType": "Encounter",
+          "id": "e927aa3e-4f87-4a06-bb58-cd3e6a7df8df",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+            ]
+          },
+          "status": "finished",
+          "class": {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            "code": "AMB",
+            "display": "ambulatory"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "period": {
+            "start": "2026-02-01T10:00:00Z"
+          },
+          "participant": [
+            {
+              "type": [
+                {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                      "code": "PPRF",
+                      "display": "primary performer"
+                    }
+                  ]
+                }
+              ],
+              "individual": {
+                "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+              }
+            }
+          ],
+          "serviceProvider": {
+            "reference": "urn:uuid:b859a2e3-0278-4472-a148-29c81ab92589"
+          }
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:d75ef10f-b95a-4a21-b0bc-d5f236522b8a",
+        "resource": {
+          "resourceType": "Observation",
+          "id": "d75ef10f-b95a-4a21-b0bc-d5f236522b8a",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ],
+          "code": {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "718-7",
+                "display": "Hemoglobin [Mass/volume] in Blood"
+              }
+            ],
+            "text": "Hemoglobin [Mass/volume] in Blood"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "effectiveDateTime": "2026-02-01T10:00:00Z",
+          "valueQuantity": {
+            "value": 14.0,
+            "unit": "g/dL",
+            "system": "http://unitsofmeasure.org",
+            "code": "g/dL"
+          },
+          "performer": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:d85ef10f-b95a-4a21-b0bc-d5f236522b8b",
+        "resource": {
+          "resourceType": "Observation",
+          "id": "d85ef10f-b95a-4a21-b0bc-d5f236522b8b",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ],
+          "code": {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "6690-2",
+                "display": "Leukocytes [#/volume] in Blood by Automated count"
+              }
+            ],
+            "text": "Leukocytes [#/volume] in Blood by Automated count"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "effectiveDateTime": "2026-02-01T10:00:00Z",
+          "valueQuantity": {
+            "value": 7000.0,
+            "unit": "/uL",
+            "system": "http://unitsofmeasure.org",
+            "code": "/uL"
+          },
+          "performer": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:d95ef10f-b95a-4a21-b0bc-d5f236522b8c",
+        "resource": {
+          "resourceType": "Observation",
+          "id": "d95ef10f-b95a-4a21-b0bc-d5f236522b8c",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ],
+          "code": {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "2093-3",
+                "display": "Cholesterol [Mass/volume] in Serum or Plasma"
+              }
+            ],
+            "text": "Cholesterol [Mass/volume] in Serum or Plasma"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "effectiveDateTime": "2026-02-01T10:00:00Z",
+          "valueQuantity": {
+            "value": 200.0,
+            "unit": "mg/dL",
+            "system": "http://unitsofmeasure.org",
+            "code": "mg/dL"
+          },
+          "performer": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:da5ef10f-b95a-4a21-b0bc-d5f236522b8d",
+        "resource": {
+          "resourceType": "Observation",
+          "id": "da5ef10f-b95a-4a21-b0bc-d5f236522b8d",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ],
+          "code": {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "58410-2",
+                "display": "CBC panel - Blood by Automated count"
+              }
+            ],
+            "text": "CBC panel - Blood by Automated count"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "effectiveDateTime": "2026-02-01T10:00:00Z",
+          "hasMember": [
+            {
+              "reference": "urn:uuid:d75ef10f-b95a-4a21-b0bc-d5f236522b8a"
+            },
+            {
+              "reference": "urn:uuid:d85ef10f-b95a-4a21-b0bc-d5f236522b8b"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:ca41d234-3afc-48e3-b8b5-586a44d9df54",
+        "resource": {
+          "resourceType": "DiagnosticReport",
+          "id": "ca41d234-3afc-48e3-b8b5-586a44d9df54",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportLab"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "4241000179101",
+                  "display": "Laboratory report"
+                }
+              ]
+            }
+          ],
+          "resultsInterpreter": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            }
+          ],
+          "conclusion": "NA",
+          "code": {
+            "text": "Laboratory Report"
+          },
+          "subject": {
+            "reference": "urn:uuid:c406296f-3e76-4958-9a3a-f44f213c6184"
+          },
+          "performer": [
+            {
+              "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+            },
+            {
+              "reference": "urn:uuid:b859a2e3-0278-4472-a148-29c81ab92589"
+            }
+          ],
+          "encounter": {
+            "reference": "urn:uuid:e927aa3e-4f87-4a06-bb58-cd3e6a7df8df"
+          },
+          "effectiveDateTime": "2026-02-01T10:00:00Z",
+          "issued": "2026-02-01T10:00:00Z",
+          "result": [
+            {
+              "reference": "urn:uuid:da5ef10f-b95a-4a21-b0bc-d5f236522b8d"
+            },
+            {
+              "reference": "urn:uuid:d95ef10f-b95a-4a21-b0bc-d5f236522b8c"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
