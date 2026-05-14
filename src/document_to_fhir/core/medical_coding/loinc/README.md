@@ -1,9 +1,9 @@
 # LOINC Prediction System
 
-The **LOINC Prediction System** is a modular framework designed to map clinical
-lab test details to canonical [LOINC](https://loinc.org/) codes. It uses LLMs
-to perform semantic enrichment of LOINC structured knowledge bases to enable
-accurate, context-aware predictions
+The **LOINC Prediction System** is a modular research framework designed to help
+map clinical lab test details to canonical [LOINC](https://loinc.org/) codes.
+It uses LLMs to perform semantic enrichment of LOINC structured knowledge bases
+to enable accurate, context-aware predictions.
 
 The system operates in two distinct phases:
 

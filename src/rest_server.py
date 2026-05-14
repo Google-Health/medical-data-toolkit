@@ -321,15 +321,6 @@ def _create_llm_client(config: Mapping[str, Any]) -> model_client.LLMClient:
         max_retries=params.get('max_retries', 3),
         supports_pdf=params.get('supports_pdf', False),
     )
-  elif client_type == 'MedGemmaVertexAIHttpClient':
-    if 'endpoint_id' not in params:
-      raise ValueError(
-          f"'endpoint_id' is required for {client_type} in configuration"
-      )
-    return model_client.MedGemmaVertexAIHttpClient(
-        endpoint_id=params['endpoint_id'],
-        verbose=params.get('verbose', False),
-    )
   else:
     raise ValueError(f'Unsupported LLMClient type: {client_type}')
 

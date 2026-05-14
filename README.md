@@ -1,7 +1,7 @@
 # Medical Data Toolkit
 
 Medical Data Toolkit converts unstructured medical documents (PDFs, images,
-screenshots) into accurately structure electronic medical data in the [HL7® FHIR®](https://www.hl7.org/fhir/)
+screenshots) into accurately structured electronic medical data in the [HL7® FHIR®](https://www.hl7.org/fhir/)
 standard format. The toolkit accomplishes this through the use of an LLM model
 (external to the tool), specialized document schemas, and advanced extraction
 pipelines.
@@ -31,7 +31,7 @@ Medical Data Toolkit addresses the high-cardinality challenge of LOINC mapping
 for lab reports using a multi-stage strategy:
 
 1.  **Core-Analyte Prediction**: Extracts the primary substance being measured
-    (e.g., "Glucose") during initial extraction, achieving near 100% recall.
+    (e.g., "Glucose") during initial extraction, achieving high recall.
 2.  **Offline Knowledge Base**: Uses pre-computed knowledge base to populate the
     LOINC axes (Property, System, etc.). Constructing this Knowledge Base is a
     prerequisite for offline execution. Detailed instructions can be found in
@@ -55,7 +55,9 @@ or executed locally.
 
 ### Limitations
 
-Transformation of hand written medical documents to FHIR are not supported.
+ - Transformation of hand written medical documents to FHIR® is not supported.
+ - The toolkit supports Diagnostic Report or Laboratory Report type of medical documents.
+ - The toolkit supports FHIR® Implementation Guide for [ABDM](https://nrces.in/ndhm/fhir/r4/profiles.html).
 
 ## Toolkit interface Workflow
 
@@ -146,11 +148,6 @@ docker kill medical-data-toolkit-container && \
 docker system prune --all --force
 
 ```
-
-## Contributing
-
-We are open to bug reports, pull requests (PR), and other contributions. See
-[CONTRIBUTING](CONTRIBUTING.md) for details.
 
 ## License
 
