@@ -13,7 +13,7 @@ pillow==12.2.0
 # Downgraded from 7.34.1 to fix compatibility with google-fhir-r4.
 # Protobuf 7.x uses UPB backend by default, which removes attributes like '.label'
 # on descriptors that the FHIR library relies on.
-protobuf==4.25.3
+protobuf==5.29.6
 pydantic==2.12.5  # version 2.12.5 is required by litellm 1.83.14
 pypdfium2==5.7.1
 pyyaml==6.0.3
