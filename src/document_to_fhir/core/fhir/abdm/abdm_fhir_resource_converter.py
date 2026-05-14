@@ -359,8 +359,6 @@ def create_lab_observation(
           if lab_test.unit:
             rr.high.unit.value = lab_test.unit
             rr.high.code.value = lab_test.unit
-
-      # TODO: b/477283602 - Add support for other range formats.
       # If no pattern matches for range, set the text value.
       if not rr.low.value.value and not rr.high.value.value:
         rr.text.value = range_str

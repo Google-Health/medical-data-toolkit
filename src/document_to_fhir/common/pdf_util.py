@@ -25,8 +25,6 @@ PDFIUM_RENDERER_LOCK = threading.Lock()
 PDFIUM_DEFAULT_DPI = 72
 
 
-# TODO: b/375482381 - Before we use this in production, Ask the security
-# team if we can use this library given our current set up and use case.
 # Convert each page to a binary PNG image.
 def convert_pdf_pages_to_png_images(
     file_content: bytes,
