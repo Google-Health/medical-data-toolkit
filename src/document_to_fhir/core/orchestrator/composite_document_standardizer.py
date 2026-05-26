@@ -16,20 +16,18 @@
 import base64
 from collections.abc import Mapping
 import concurrent.futures
-import datetime
 import functools
 import json
 import logging
-import uuid
 
 from google.fhir.r4 import json_format
 from src.document_to_fhir.common import pdf_util
-from src.document_to_fhir.core.fhir.abdm import abdm_bundle_enricher
-from src.document_to_fhir.core.fhir.abdm import abdm_fhir_resource_converter as resource_converter
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 from src.document_to_fhir.core.classification import classifier as classifier_lib
+from src.document_to_fhir.core.fhir.abdm import abdm_bundle_enricher
 from src.document_to_fhir.core.orchestrator import medical_document_standardizer
+
 
 # Standard DPI for PDF to Image conversion
 TARGET_PDF_TO_IMAGE_DPI = 200
@@ -233,7 +231,7 @@ class CompositeDocumentStandardizer:
 
     # 3. Segment Loop (Parallelized)
     with concurrent.futures.ThreadPoolExecutor(
-        max_workers=min(len(segments_to_process), 5)
+        max_workers=min(len(segments_to_process), 3)
     ) as executor:
       standardized_documents = executor.map(
           functools.partial(

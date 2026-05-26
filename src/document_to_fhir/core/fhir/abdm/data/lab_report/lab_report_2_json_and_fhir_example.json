@@ -290,7 +290,7 @@
           },
           "effectiveDateTime": "2026-02-01T10:00:00Z",
           "valueQuantity": {
-            "value": 14.0,
+            "value": 14,
             "unit": "g/dL",
             "system": "http://unitsofmeasure.org",
             "code": "g/dL"
@@ -339,7 +339,7 @@
           },
           "effectiveDateTime": "2026-02-01T10:00:00Z",
           "valueQuantity": {
-            "value": 7000.0,
+            "value": 7000,
             "unit": "/uL",
             "system": "http://unitsofmeasure.org",
             "code": "/uL"
@@ -388,7 +388,7 @@
           },
           "effectiveDateTime": "2026-02-01T10:00:00Z",
           "valueQuantity": {
-            "value": 200.0,
+            "value": 200,
             "unit": "mg/dL",
             "system": "http://unitsofmeasure.org",
             "code": "mg/dL"

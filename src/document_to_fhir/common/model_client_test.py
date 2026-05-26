@@ -14,9 +14,12 @@
 """Tests for model_client.py."""
 
 import datetime
+import time
 from unittest import mock
 
 from absl.testing import absltest
+from google import genai
+import google.auth
 from google.genai import types
 import litellm
 import pydantic
@@ -32,7 +35,7 @@ class MockSchema(pydantic.BaseModel):
 
 class ModelClientTest(absltest.TestCase):
 
-  @mock.patch("google.genai.Client")
+  @mock.patch.object(genai, "Client", autospec=True)
   def test_gemini_client_generate_content(self, mock_genai_client):
     client = model_client.GeminiClient(api_key="fake_key", model="gemini-pro")
     mock_instance = mock_genai_client.return_value
@@ -49,7 +52,7 @@ class ModelClientTest(absltest.TestCase):
         model="gemini-pro", contents=contents, config=expected_config
     )
 
-  @mock.patch("google.genai.Client")
+  @mock.patch.object(genai, "Client", autospec=True)
   def test_gemini_client_verbose(self, unused_mock_genai_client):
     client = model_client.GeminiClient(
         api_key="fake_key", model="gemini-pro", verbose=True)
@@ -75,10 +78,8 @@ class ModelClientTest(absltest.TestCase):
     patient_valid = resources.Patient.model_validate(data_valid)
     self.assertEqual(patient_valid.dob, datetime.date(1990, 1, 1))
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_generate_content(
       self, mock_get_params, mock_completion
   ):
@@ -88,9 +89,9 @@ class ModelClientTest(absltest.TestCase):
         api_base="http://localhost:8000/v1",
         api_key="fake_key",
     )
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = '{"reasoning": "litellm reasoning"}'
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -109,18 +110,16 @@ class ModelClientTest(absltest.TestCase):
     self.assertEqual(call_kwargs["api_key"], "fake_key")
     self.assertEqual(call_kwargs["response_format"], MockSchema)
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_injects_schema_prompt(
       self, mock_get_params, mock_completion
   ):
     mock_get_params.return_value = []
     client = model_client.LiteLLMClient(model="openai/gemma")
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = '{"reasoning": "ok"}'
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -139,18 +138,16 @@ class ModelClientTest(absltest.TestCase):
     self.assertIn("JSON schema", messages[0]["content"][1]["text"])
     self.assertNotIn("response_format", call_kwargs)
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
-  def test_litellm_client_skips_schema_prompt(
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
+  def test_litellm_client_always_injects_schema_prompt(
       self, mock_get_params, mock_completion
   ):
     mock_get_params.return_value = ["response_format"]
     client = model_client.LiteLLMClient(model="openai/gemma")
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = '{"reasoning": "ok"}'
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -164,20 +161,19 @@ class ModelClientTest(absltest.TestCase):
     messages = call_kwargs["messages"]
     self.assertLen(messages, 1)
     self.assertEqual(messages[0]["role"], "user")
-    self.assertLen(messages[0]["content"], 1)
+    self.assertLen(messages[0]["content"], 2)  # Injected schema prompt should exist!
     self.assertEqual(messages[0]["content"][0]["text"], "Hello")
+    self.assertIn("JSON schema", messages[0]["content"][1]["text"])
     self.assertEqual(call_kwargs["response_format"], MockSchema)
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_handles_parts(self, mock_get_params, mock_completion):
     mock_get_params.return_value = []
     client = model_client.LiteLLMClient(model="openai/gemma")
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = "ok"
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -205,18 +201,16 @@ class ModelClientTest(absltest.TestCase):
         "data:image/png;base64,", messages[0]["content"][2]["image_url"]["url"]
     )
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_handles_dict_messages(
       self, mock_get_params, mock_completion
   ):
     mock_get_params.return_value = []
     client = model_client.LiteLLMClient(model="openai/gemma")
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = "ok"
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -237,18 +231,16 @@ class ModelClientTest(absltest.TestCase):
     self.assertEqual(messages[1]["role"], "user")
     self.assertEqual(messages[1]["content"][0]["text"], "user prompt")
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_uses_parsed_response(
       self, mock_get_params, mock_completion
   ):
     mock_get_params.return_value = ["response_format"]
     client = model_client.LiteLLMClient(model="openai/gemma")
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = '{"reasoning": "ignored"}'
     mock_message.parsed = MockSchema(reasoning="direct parsed")
     mock_choice.message = mock_message
@@ -259,11 +251,9 @@ class ModelClientTest(absltest.TestCase):
 
     self.assertEqual(response.parsed.reasoning, "direct parsed")
 
-  @mock.patch("time.sleep")
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(time, "sleep", autospec=True)
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_retry_on_rate_limit(
       self, mock_get_params, mock_completion, mock_sleep
   ):
@@ -272,9 +262,9 @@ class ModelClientTest(absltest.TestCase):
         model="openai/gemma", max_retries=3
     )
 
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = "ok"
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -283,7 +273,7 @@ class ModelClientTest(absltest.TestCase):
     mock_completion.side_effect = [
         litellm.RateLimitError(
             message="Rate limit",
-            response=mock.Mock(headers={}),
+            response=mock.Mock(spec=["headers"], headers={}),
             llm_provider="openai",
             model="openai/gemma",
         ),
@@ -295,11 +285,9 @@ class ModelClientTest(absltest.TestCase):
     self.assertEqual(response.text, "ok")
     self.assertEqual(mock_completion.call_count, 2)
 
-  @mock.patch("time.sleep")
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(time, "sleep", autospec=True)
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_retry_on_parsing_error(
       self, mock_get_params, mock_completion, mock_sleep
   ):
@@ -308,17 +296,17 @@ class ModelClientTest(absltest.TestCase):
         model="openai/gemma", max_retries=3
     )
 
-    mock_response_bad = mock.Mock()
-    mock_choice_bad = mock.Mock()
-    mock_message_bad = mock.Mock()
+    mock_response_bad = mock.Mock(spec=["choices"])
+    mock_choice_bad = mock.Mock(spec=["message"])
+    mock_message_bad = mock.Mock(spec=["content", "parsed"])
     mock_message_bad.content = "invalid json"
     mock_message_bad.parsed = None
     mock_choice_bad.message = mock_message_bad
     mock_response_bad.choices = [mock_choice_bad]
 
-    mock_response_good = mock.Mock()
-    mock_choice_good = mock.Mock()
-    mock_message_good = mock.Mock()
+    mock_response_good = mock.Mock(spec=["choices"])
+    mock_choice_good = mock.Mock(spec=["message"])
+    mock_message_good = mock.Mock(spec=["content", "parsed"])
     mock_message_good.content = '{"reasoning": "ok"}'
     mock_message_good.parsed = None
     mock_choice_good.message = mock_message_good
@@ -334,10 +322,8 @@ class ModelClientTest(absltest.TestCase):
     self.assertEqual(response.parsed.reasoning, "ok")
     self.assertEqual(mock_completion.call_count, 2)
 
-  @mock.patch("litellm.completion")
-  @mock.patch(
-      "src.document_to_fhir.common.model_client.get_supported_openai_params"
-  )
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
   def test_litellm_client_propagates_temperature(
       self, mock_get_params, mock_completion
   ):
@@ -346,9 +332,9 @@ class ModelClientTest(absltest.TestCase):
         model="openai/gemma", temperature=0.2
     )
 
-    mock_response = mock.Mock()
-    mock_choice = mock.Mock()
-    mock_message = mock.Mock()
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
     mock_message.content = "ok"
     mock_message.parsed = None
     mock_choice.message = mock_message
@@ -364,6 +350,100 @@ class ModelClientTest(absltest.TestCase):
   def test_litellm_client_default_temperature(self):
     client = model_client.LiteLLMClient(model="openai/gemma")
     self.assertEqual(client.temperature, 0.0)
+
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
+  def test_litellm_client_override_temperature_from_config(
+      self, mock_get_params, mock_completion
+  ):
+    mock_get_params.return_value = []
+    client = model_client.LiteLLMClient(model="openai/gemma", temperature=0.2)
+
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
+    mock_message.content = "ok"
+    mock_message.parsed = None
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    client.generate_content(contents=["Hello"], config={"temperature": 0.8})
+
+    self.assertEqual(mock_completion.call_count, 1)
+    _, call_kwargs = mock_completion.call_args
+    self.assertEqual(call_kwargs["temperature"], 0.8)
+
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
+  def test_litellm_client_thinking_enabled(
+      self, mock_get_params, mock_completion
+  ):
+    mock_get_params.return_value = []
+    client = model_client.LiteLLMClient(
+        model="openai/gemma", enable_thinking=True
+    )
+
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
+    mock_message.content = (
+        "<|channel>thought\n"
+        "This is the thinking process.\n"
+        "<channel|>\n"
+        '{"reasoning": "final answer"}'
+    )
+    mock_message.parsed = None
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    response = client.generate_content(contents=["Hello"], schema=MockSchema)
+
+    self.assertEqual(mock_completion.call_count, 1)
+    _, call_kwargs = mock_completion.call_args
+
+    messages = call_kwargs["messages"]
+    self.assertLen(messages, 2)
+    self.assertEqual(messages[0]["role"], "system")
+    self.assertEqual(messages[0]["content"], "<|think|>")
+    self.assertEqual(response.text, '{"reasoning": "final answer"}')
+    self.assertEqual(response.thinking, "This is the thinking process.")
+    self.assertEqual(response.parsed.reasoning, "final answer")
+
+  def test_parse_structured_response_with_post_process(self):
+    def mock_post_process(data):
+      if "res" in data:
+        return {"reasoning": data["res"]}
+      return data
+
+    # Case 1: Validation fails initially, post_process fixes it
+    text_response = '{"res": "test from post_process"}'
+    parsed = model_client.parse_structured_response(
+        text_response,
+        response_schema=MockSchema,
+        post_process=mock_post_process,
+    )
+    self.assertEqual(parsed.reasoning, "test from post_process")
+
+    # Case 2: Validation succeeds initially, post_process is NOT called
+    text_response_ok = '{"reasoning": "already ok"}'
+    mock_pp = mock.Mock(side_effect=mock_post_process)
+    parsed_ok = model_client.parse_structured_response(
+        text_response_ok, response_schema=MockSchema, post_process=mock_pp
+    )
+    self.assertEqual(parsed_ok.reasoning, "already ok")
+    mock_pp.assert_not_called()
+
+    # Case 3: Validation fails even after post_process, raises
+    # ResponseParsingError
+    text_response_bad = '{"unknown_field": "bad"}'
+    with self.assertRaises(model_client.ResponseParsingError):
+      model_client.parse_structured_response(
+          text_response_bad,
+          response_schema=MockSchema,
+          post_process=mock_post_process,
+      )
 
 
 if __name__ == "__main__":

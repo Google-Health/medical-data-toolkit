@@ -48,7 +48,6 @@ _API_KEY = flags.DEFINE_string(
     "api_key",
     os.environ.get("API_KEY", None),
     "API Key for the LLM client. Defaults to the API_KEY environment variable.",
-    required=True,
 )
 
 _MODEL_NAME = flags.DEFINE_string(

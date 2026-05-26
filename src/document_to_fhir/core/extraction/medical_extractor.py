@@ -59,12 +59,22 @@ class MedicalExtractor(abc.ABC):
         types.Part.from_bytes(data=img, mime_type=mime_type) for img in images
     ]
     request_contents.append(self.prompt)
+
+    def post_process_extractor(parsed_json):
+      if isinstance(parsed_json, list) and len(parsed_json) == 1:
+        logging.warning(
+            "Post-processing Unwrapping response from list of length 1"
+        )
+        return parsed_json[0]
+      return parsed_json
+
     response = self.client.generate_content(
         contents=request_contents,
         schema=self.schema,
         config={
             "response_mime_type": "application/json",
         },
+        post_process=post_process_extractor,
     )
     if response.parsed:
       return response.parsed

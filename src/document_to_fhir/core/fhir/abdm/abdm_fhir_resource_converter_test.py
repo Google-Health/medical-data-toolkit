@@ -14,6 +14,7 @@
 import datetime
 
 from absl.testing import absltest
+from absl.testing import parameterized
 
 from google.fhir.r4.proto.core import datatypes_pb2
 from src.document_to_fhir.common.schema import resources
@@ -21,7 +22,7 @@ from src.document_to_fhir.common.schema.abdm import abdm_resources
 from src.document_to_fhir.core.fhir.abdm import abdm_fhir_resource_converter
 
 
-class AbdmFhirResourceConverterTest(absltest.TestCase):
+class AbdmFhirResourceConverterTest(parameterized.TestCase):
 
   def test_create_patient(self):
     patient_data = resources.Patient(
@@ -153,6 +154,105 @@ class AbdmFhirResourceConverterTest(absltest.TestCase):
         report_fhir.meta.profile[0].value,
         "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportLab",
     )
+
+  @parameterized.named_parameters(
+      (
+          "zero_prefix_normalization",
+          "Eosinophils",
+          "Absolute Eosinophil Count",
+          "00",
+          "cells/mcL",
+          ["00-450"],
+          "0",
+          "0",
+          "450",
+      ),
+      (
+          "threshold_and_decimal_normalization",
+          "Glucose",
+          "Glucose",
+          "01.0",
+          "mg/dL",
+          ["< 01"],
+          "1.0",
+          None,
+          "1",
+      ),
+  )
+  def test_create_lab_observation_normalization(
+      self,
+      core_analyte,
+      name,
+      result,
+      unit,
+      reference_range,
+      expected_value,
+      expected_low,
+      expected_high,
+  ):
+    lab_test = resources.LabTest(
+        core_analyte=core_analyte,
+        name=name,
+        result=result,
+        unit=unit,
+        reference_range=reference_range,
+    )
+    obs_fhir = abdm_fhir_resource_converter.create_lab_observation(
+        lab_test, "obs-id", "Patient/patient-id", None, None
+    )
+    self.assertEqual(obs_fhir.value.quantity.value.value, expected_value)
+    self.assertLen(obs_fhir.reference_range, 1)
+    if expected_low is not None:
+      self.assertEqual(
+          obs_fhir.reference_range[0].low.value.value, expected_low
+      )
+    else:
+      self.assertFalse(obs_fhir.reference_range[0].low.HasField("value"))
+
+    if expected_high is not None:
+      self.assertEqual(
+          obs_fhir.reference_range[0].high.value.value, expected_high
+      )
+    else:
+      self.assertFalse(obs_fhir.reference_range[0].high.HasField("value"))
+
+  @parameterized.named_parameters(
+      ("unparseable_text", "M: 1 - 7 / F: 3 - 12", "M: 1 - 7 / F: 3 - 12"),
+      ("invalid_decimals", "1.2.3-4.5.6", "1.2.3-4.5.6"),
+  )
+  def test_create_lab_observation_invalid_range_fallback(
+      self, reference_range_str, expected_text
+  ):
+    lab_test = resources.LabTest(
+        core_analyte="ESR",
+        name="ESR",
+        result="23",
+        unit="mm",
+        reference_range=[reference_range_str],
+    )
+    obs_fhir = abdm_fhir_resource_converter.create_lab_observation(
+        lab_test, "obs-id", "Patient/patient-id", None, None
+    )
+    self.assertLen(obs_fhir.reference_range, 1)
+    self.assertFalse(obs_fhir.reference_range[0].low.HasField("value"))
+    self.assertFalse(obs_fhir.reference_range[0].high.HasField("value"))
+    self.assertEqual(obs_fhir.reference_range[0].text.value, expected_text)
+
+  @parameterized.named_parameters(
+      ("empty_string", ""),
+      ("whitespace_only", "   "),
+  )
+  def test_create_lab_observation_empty_result(self, result):
+    lab_test = resources.LabTest(
+        core_analyte="WBC",
+        name="White Blood Cell Count",
+        result=result,
+        unit="Thousand/uL",
+    )
+    obs_fhir = abdm_fhir_resource_converter.create_lab_observation(
+        lab_test, "obs-id", "Patient/patient-id", None, None
+    )
+    self.assertFalse(obs_fhir.HasField("value"))
 
 
 if __name__ == "__main__":

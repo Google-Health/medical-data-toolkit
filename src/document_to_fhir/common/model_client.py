@@ -15,9 +15,11 @@
 
 import abc
 import base64
+import copy
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+import re
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from google import genai
 import google.auth
@@ -31,6 +33,9 @@ import tenacity
 
 
 Request = google.auth.transport.requests.Request
+_THOUGHT_PATTERN = re.compile(
+    r"<\|channel>thought\n(.*?)\n<channel\|>", re.DOTALL
+)
 
 
 class ResponseParsingError(Exception):
@@ -57,6 +62,7 @@ class LLMClient(abc.ABC):
       contents: List[Union[str, Any]],
       schema: Optional[Any] = None,
       config: Optional[Dict[str, Any]] = None,
+      post_process: Optional[Callable[[Any], Any]] = None,
   ) -> Any:
     """Generates content using the specified configuration."""
 
@@ -75,8 +81,8 @@ def create_llm_client(
     raise ValueError(f"Unsupported client type: {client_type}")
 
 
-class GeminiClient(LLMClient):
-  """Client for Gemini API via the genai library."""
+class GenAIClientBase(LLMClient):
+  """Base client for GenAI API models."""
 
   def __init__(
       self,
@@ -90,161 +96,178 @@ class GeminiClient(LLMClient):
     self.model = model
     self.config = config or {}
     self.config["response_mime_type"] = "application/json"
+
+  def generate_content(
+      self,
+      contents: List[Union[str, Any]],
+      schema: Optional[Any] = None,
+      config: Optional[Dict[str, Any]] = None,
+      post_process: Optional[Callable[[Any], Any]] = None,
+  ) -> Any:
+    """Calls the GenAI API's generate_content method.
+
+    Args:
+      contents: A list of message parts, which can be strings or `types.Part`
+        objects.
+      schema: An optional Pydantic model or dict representing the expected JSON
+        schema for the response.
+      config: An optional dictionary of configuration parameters to override or
+        add to the client's default configuration.
+      post_process: An optional callable that takes the parsed JSON object as
+        input and returns a processed JSON object. This is called if Pydantic
+        validation fails.
+
+    Returns:
+      The response object from the `genai.Client.models.generate_content` call.
+    """
+    merged_config = self.config.copy()
+    if config:
+      merged_config.update(config)
+
+    if schema:
+      merged_config["response_schema"] = schema
+
+    return self.client.models.generate_content(
+        model=self.model, contents=contents, config=merged_config
+    )
+
+
+class GeminiClient(GenAIClientBase):
+  """Client for Gemini API via the genai library."""
 
   @property
   def supports_pdf(self) -> bool:
     return True
 
-  def generate_content(
-      self,
-      contents: List[Union[str, Any]],
-      schema: Optional[Any] = None,
-      config: Optional[Dict[str, Any]] = None,
-  ) -> Any:
-    """Calls the Gemini API's generate_content method."""
-    merged_config = self.config.copy()
-    if config:
-      merged_config.update(config)
 
-    if schema:
-      merged_config["response_schema"] = schema
-
-    return self.client.models.generate_content(
-        model=self.model, contents=contents, config=merged_config
-    )
-
-
-class GemmaClient(LLMClient):
+class GemmaClient(GenAIClientBase):
   """Client for Gemma API via the genai library."""
-
-  def __init__(
-      self,
-      api_key: str,
-      model: str,
-      config: Optional[Dict[str, Any]] = None,
-      verbose: bool = False,
-  ):
-    super().__init__(verbose=verbose)
-    self.client = genai.Client(api_key=api_key)
-    self.model = model
-    self.config = config or {}
-    self.config["response_mime_type"] = "application/json"
 
   @property
   def supports_pdf(self) -> bool:
     return False
 
-  def generate_content(
-      self,
-      contents: List[Union[str, Any]],
-      schema: Optional[Any] = None,
-      config: Optional[Dict[str, Any]] = None,
-  ) -> Any:
-    """Calls the Gemma API's generate_content method."""
-    merged_config = self.config.copy()
-    if config:
-      merged_config.update(config)
-
-    if schema:
-      merged_config["response_schema"] = schema
-
-    return self.client.models.generate_content(
-        model=self.model, contents=contents, config=merged_config
-    )
-
 
 class MockResponse:
   """A mock response class to mimic genai response structure."""
 
-  def __init__(self, text, parsed=None):
+  def __init__(self, text, parsed=None, thinking=None):
+    """Initializes the MockResponse.
+
+    Args:
+      text: The raw text response from the model.
+      parsed: The parsed object from the response, often a Pydantic model.
+      thinking: Optional, the extracted thinking process if available.
+    """
     self.text = text
     self.parsed = parsed
+    self.thinking = thinking
 
 
-def _parse_structured_response(text_response: str, response_schema: Any) -> Any:
+def _clean_and_extract_json_string(text_response: str) -> str:
+  """Cleans LLM response text and extracts JSON string."""
+  clean_text = text_response.strip()
+  unused95_tag = "<unused95>"
+  if unused95_tag in clean_text:
+    clean_text = clean_text[
+        clean_text.find(unused95_tag) + len(unused95_tag) :
+    ].strip()
+
+  ctrl95_tag = "<ctrl95>"
+  if ctrl95_tag in clean_text:
+    clean_text = clean_text[
+        clean_text.find(ctrl95_tag) + len(ctrl95_tag) :
+    ].strip()
+
+  # Robust JSON extraction: look for ```json and the following ```
+  json_start_marker = "```json"
+  json_end_marker = "```"
+
+  start_idx = clean_text.find(json_start_marker)
+  if start_idx != -1:
+    start_idx += len(json_start_marker)
+    end_idx = clean_text.find(json_end_marker, start_idx)
+    if end_idx != -1:
+      clean_text = clean_text[start_idx:end_idx].strip()
+  elif clean_text.startswith("```"):
+    # Handle case where it's just ``` without 'json'
+    start_idx = 3
+    end_idx = clean_text.find(json_end_marker, start_idx)
+    if end_idx != -1:
+      clean_text = clean_text[start_idx:end_idx].strip()
+  return clean_text
+
+
+def _unwrap_json(parsed_json: Any, response_schema: Any) -> Any:
+  """Unwraps JSON if it's nested in a single key like {'response': ...}."""
+  if (
+      isinstance(parsed_json, dict)
+      and len(parsed_json) == 1
+      and hasattr(response_schema, "__name__")
+  ):
+    key = list(parsed_json.keys())[0]
+    schema_name = response_schema.__name__.lower()
+    normalized_key = key.lower().replace("_", "").replace("-", "")
+
+    # Match if key is schema name, or generic "results" / "data"
+    if normalized_key == schema_name.replace("_", "") or normalized_key in [
+        "results",
+        "response",
+        "data",
+        "output",
+    ]:
+      if isinstance(parsed_json[key], (dict, list)):
+        logging.warning("Unwrapping response from outer key: %s", key)
+        return parsed_json[key]
+  return parsed_json
+
+
+def _validate_and_process_json(
+    parsed_json: Any,
+    response_schema: Any,
+    post_process: Optional[Callable[[Any], Any]] = None,
+) -> Any:
+  """Validates parsed_json against response_schema, applying post_process on failure."""
+  if isinstance(response_schema, type) and issubclass(
+      response_schema, pydantic.BaseModel
+  ):
+    try:
+      return response_schema.model_validate(parsed_json)
+    except pydantic.ValidationError as e:
+      if post_process:
+        logging.warning("Validation failed. Applying post_process.")
+        processed_json = post_process(parsed_json)
+        return response_schema.model_validate(processed_json)
+      raise e
+  return parsed_json
+
+
+def parse_structured_response(
+    text_response: str,
+    response_schema: Any,
+    post_process: Optional[Callable[[Any], Any]] = None,
+) -> Any:
   """Parses structured JSON from LLM response text."""
-  clean_text = text_response
   parsed_json = None
   try:
-    clean_text = text_response.strip()
-    unused95_tag = "<unused95>"
-    if unused95_tag in clean_text:
-      clean_text = clean_text[
-          clean_text.find(unused95_tag) + len(unused95_tag) :
-      ].strip()
+    clean_text = _clean_and_extract_json_string(text_response)
 
-    ctrl95_tag = "<ctrl95>"
-    if ctrl95_tag in clean_text:
-      clean_text = clean_text[
-          clean_text.find(ctrl95_tag) + len(ctrl95_tag) :
-      ].strip()
-
-    # Robust JSON extraction: look for ```json and the following ```
-    json_start_marker = "```json"
-    json_end_marker = "```"
-
-    start_idx = clean_text.find(json_start_marker)
-    if start_idx != -1:
-      start_idx += len(json_start_marker)
-      end_idx = clean_text.find(json_end_marker, start_idx)
-      if end_idx != -1:
-        clean_text = clean_text[start_idx:end_idx].strip()
-    elif clean_text.startswith("```"):
-      # Handle case where it's just ``` without 'json'
-      start_idx = 3
-      end_idx = clean_text.find(json_end_marker, start_idx)
-      if end_idx != -1:
-        clean_text = clean_text[start_idx:end_idx].strip()
-
-    # Always parse as JSON first to allow for flexible unwrapping.
     if not clean_text.startswith("{") and not clean_text.startswith("["):
+      snippet = (
+          text_response[:500] + "..."
+          if len(text_response) > 500
+          else text_response
+      )
       raise ResponseParsingError(
           "Cleaned response does not start with JSON object or array. Raw"
-          f" response: {text_response}"
+          f" response snippet: {snippet}"
       )
+
     parsed_json = json.loads(clean_text)
-
-    # Handle cases where LLM wraps response in an outer key matching
-    # schema name.
-    if (
-        isinstance(parsed_json, dict)
-        and len(parsed_json) == 1
-        and hasattr(response_schema, "__name__")
-    ):
-      key = list(parsed_json.keys())[0]
-      schema_name = response_schema.__name__.lower()
-      normalized_key = key.lower().replace("_", "").replace("-", "")
-
-      # Match if key is schema name, or generic "results" / "data"
-      if normalized_key == schema_name.replace("_", "") or normalized_key in [
-          "results",
-          "response",
-          "data",
-          "output",
-      ]:
-        if isinstance(parsed_json[key], (dict, list)):
-          logging.info("Unwrapping response from outer key: %s", key)
-          parsed_json = parsed_json[key]
-
-    # Handle Pydantic validation and optional list unwrapping together.
-    if isinstance(response_schema, type) and issubclass(
-        response_schema, pydantic.BaseModel
-    ):
-      if isinstance(parsed_json, list):
-        if len(parsed_json) == 1:
-          logging.info("Unwrapping response from list of length 1")
-          parsed_json = parsed_json[0]
-        else:
-          raise ResponseParsingError(
-              "Expected a single JSON object but received a list of size"
-              f" {len(parsed_json)}."
-          )
-
-      # Validate `parsed_json` against `response_schema`.
-      # A `ValidationError` is caught and re-raised as `ResponseParsingError`
-      # for consistent error handling by clients.
-      return response_schema.model_validate(parsed_json)
-    return parsed_json
+    unwrapped_json = _unwrap_json(parsed_json, response_schema)
+    return _validate_and_process_json(
+        unwrapped_json, response_schema, post_process
+    )
 
   except (
       pydantic.ValidationError,
@@ -258,16 +281,24 @@ def _parse_structured_response(text_response: str, response_schema: Any) -> Any:
       logging.error(
           "%s. Errors:\n%s", err_msg, json.dumps(e.errors(), indent=2)
       )
-      logging.error(
+      logging.debug(
           "JSON content that failed validation:\n%s",
           json.dumps(parsed_json, indent=2),
       )
+    elif isinstance(e, json.JSONDecodeError):
+      err_msg = "JSON decoding failed"
+      logging.error("%s: %s", err_msg, e)
+      context_size = 100
+      start = max(0, e.pos - context_size)
+      end = min(len(e.doc), e.pos + context_size)
+      snippet = e.doc[start:end]
+      logging.error(
+          "JSON decoding error context around position %d:\n...%s...",
+          e.pos,
+          snippet,
+      )
     else:
       logging.error("%s: %s", err_msg, e)
-
-    logging.exception(
-        "Failed to parse response. Raw response text: %s", text_response
-    )
     raise ResponseParsingError(f"Response failed: {e}") from e
 
 
@@ -285,6 +316,7 @@ class LiteLLMClient(LLMClient):
       timeout: float = 300.0,
       max_retries: int = 3,
       supports_pdf: bool = False,
+      enable_thinking: bool = False,
   ):
     super().__init__(verbose=verbose)
     self.model = model
@@ -295,28 +327,37 @@ class LiteLLMClient(LLMClient):
     self.timeout = timeout
     self.max_retries = max_retries
     self._supports_pdf = supports_pdf
+    self.enable_thinking = enable_thinking
 
   @property
   def supports_pdf(self) -> bool:
     return self._supports_pdf
 
-  def generate_content(
+  def _prepare_messages(
       self,
       contents: List[Union[str, Any]],
-      schema: Optional[Any] = None,
-      config: Optional[Dict[str, Any]] = None,
-  ) -> Any:
-    """Calls LiteLLM completion API."""
-    merged_config = self.config.copy()
-    if config:
-      merged_config.update(config)
+      schema: Optional[Any],
+      merged_config: Dict[str, Any],
+      thinking_enabled: bool,
+  ) -> List[Dict[str, Any]]:
+    """Prepares messages in the LiteLLM/OpenAI format from contents.
 
+    Args:
+      contents: A list of message parts, can be strings, types.Part, or dicts
+        with a "role".
+      schema: An optional Pydantic schema to inject into the prompt.
+      merged_config: The merged configuration dictionary.
+      thinking_enabled: Whether to inject a thinking token in the system
+        message.
+
+    Returns:
+      A list of dictionaries, where each dictionary represents a message in the
+      LiteLLM/OpenAI format.
+    """
     local_contents = contents.copy()
 
-    supported_params = get_supported_openai_params(model=self.model) or []
-
-    # Add schema to the prompt if the client does not support response_format.
-    if schema and "response_format" not in supported_params:
+    # Always inject the schema to the prompt to provide semantic context.
+    if schema:
       if hasattr(schema, "model_json_schema"):
         schema_json = json.dumps(schema.model_json_schema(), indent=2)
         schema_prompt = (
@@ -353,10 +394,92 @@ class LiteLLMClient(LLMClient):
     if user_content:
       messages.append({"role": "user", "content": user_content})
 
+    # Handle system_instruction from config
+    system_instruction_str = merged_config.get("system_instruction", "")
+    if system_instruction_str:
+      messages.insert(0, {"role": "system", "content": system_instruction_str})
+
+    if thinking_enabled:
+      # Inject thinking token into system message
+      system_msg = None
+      for m in messages:
+        if m.get("role") == "system":
+          system_msg = m
+          break
+
+      if system_msg:
+        # Assumes content in system_msg is a string.
+        if system_msg["content"]:
+          system_msg["content"] = f"<|think|> {system_msg['content']}"
+        else:
+          system_msg["content"] = "<|think|>"
+      else:
+        messages.insert(0, {"role": "system", "content": "<|think|>"})
+
+    return messages
+
+  def _parse_thinking_response(
+      self, raw_output: str, thinking_enabled: bool
+  ) -> tuple[str, Optional[str]]:
+    """Parses the raw output to separate thoughts and final answer if enabled."""
+    thinking_process = None
+    if thinking_enabled:
+      thoughts_match = _THOUGHT_PATTERN.search(raw_output)
+      if thoughts_match:
+        thinking_process = thoughts_match.group(1).strip()
+        final_answer = _THOUGHT_PATTERN.sub("", raw_output).strip()
+      else:
+        final_answer = raw_output.strip()
+      text_response = final_answer
+    else:
+      text_response = raw_output
+    return text_response, thinking_process
+
+  def generate_content(
+      self,
+      contents: List[Union[str, Any]],
+      schema: Optional[Any] = None,
+      config: Optional[Dict[str, Any]] = None,
+      post_process: Optional[Callable[[Any], Any]] = None,
+  ) -> Any:
+    """Calls LiteLLM completion API.
+
+    Args:
+      contents: A list of message parts, which can be strings, `types.Part`
+        objects, or dictionaries with "role".
+      schema: An optional Pydantic model or dict representing the expected JSON
+        schema for the response.
+      config: An optional dictionary of configuration parameters to override or
+        add to the client's default configuration.
+      post_process: An optional callable that takes the parsed JSON object as
+        input and returns a processed JSON object. This is called if Pydantic
+        validation fails.
+
+    Returns:
+      A MockResponse object containing:
+        - text: The cleaned text response from the LLM.
+        - parsed: The object parsed according to the provided schema, if any.
+        - thinking: The extracted thinking process if `enable_thinking` is True.
+    """
+    merged_config = self.config.copy()
+    if config:
+      merged_config.update(config)
+
+    supported_params = get_supported_openai_params(model=self.model) or []
+
+    thinking_enabled = merged_config.get(
+        "enable_thinking", self.enable_thinking
+    )
+    temperature = merged_config.get("temperature", self.temperature)
+
+    messages = self._prepare_messages(
+        contents, schema, merged_config, thinking_enabled
+    )
+
     completion_args = {
         "model": self.model,
         "messages": messages,
-        "temperature": self.temperature,
+        "temperature": temperature,
         "timeout": self.timeout,
     }
 
@@ -370,21 +493,46 @@ class LiteLLMClient(LLMClient):
     if self.verbose:
       logging.info("LiteLLM Request: model=%s", self.model)
 
+    def _redact_image_urls(msgs):
+      redacted_msgs = copy.deepcopy(msgs)
+      for msg in redacted_msgs:
+        if isinstance(msg, dict) and isinstance(msg.get("content"), list):
+          for content_part in msg["content"]:
+            if (
+                isinstance(content_part, dict)
+                and content_part.get("type") == "image_url"
+                and "image_url" in content_part
+            ):
+              content_part["image_url"] = {"url": "[REDACTED]"}
+      return redacted_msgs
+
+    if self.verbose:
+      logging.info("LiteLLM Request: messages=%s", _redact_image_urls(messages))
+
     def _make_request():
       response = litellm.completion(**completion_args)
-      text_response = response.choices[0].message.content
+      raw_output = response.choices[0].message.content
+
+      text_response, thinking_process = self._parse_thinking_response(
+          raw_output, thinking_enabled
+      )
 
       parsed_obj = None
       if schema:
         if (
-            hasattr(response.choices[0].message, "parsed")
+            not thinking_enabled
+            and hasattr(response.choices[0].message, "parsed")
             and response.choices[0].message.parsed
         ):
           parsed_obj = response.choices[0].message.parsed
         else:
-          parsed_obj = _parse_structured_response(text_response, schema)
+          parsed_obj = parse_structured_response(
+              text_response, schema, post_process
+          )
 
-      return MockResponse(text=text_response, parsed=parsed_obj)
+      return MockResponse(
+          text=text_response, parsed=parsed_obj, thinking=thinking_process
+      )
 
     def _custom_wait(retry_state):
       exc = retry_state.outcome.exception()

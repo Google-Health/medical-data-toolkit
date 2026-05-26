@@ -29,7 +29,7 @@ class LoincRow(pydantic.BaseModel):
   )
   system: Optional[str] = pydantic.Field(default=None, alias="SYSTEM")
   property: Optional[str] = pydantic.Field(default=None, alias="PROPERTY")
-  scale_typ: Optional[str] = pydantic.Field(default=None, alias="SCALE_TYP")
+  scale_typ: Optional[str] = pydantic.Field(default=None, alias="SCALE_TYPE")
   common_test_rank: Optional[int] = pydantic.Field(
       default=None, alias="COMMON_TEST_RANK"
   )

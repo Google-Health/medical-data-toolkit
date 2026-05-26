@@ -23,10 +23,10 @@ from src.document_to_fhir.common.schema import medical_documents
 
 
 class DocumentSegment(pydantic.BaseModel):
+  reasoning: str = pydantic.Field(description="Reasoning for the prediction.")
   document_type: document_types.MedicalDocumentType = pydantic.Field(
       description="Predicted document type."
   )
-  reasoning: str = pydantic.Field(description="Reasoning for the prediction.")
   start_page: int = pydantic.Field(
       description="Start page number of the document."
   )

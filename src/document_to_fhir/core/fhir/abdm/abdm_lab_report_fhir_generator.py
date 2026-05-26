@@ -200,11 +200,16 @@ class AbdmLabReportFhirGenerator(fhir_generator.IFhirGenerator):
         subject=datatypes_pb2.Reference(
             uri=datatypes_pb2.String(value=patient_ref)
         ),
-        date=collection_dt,
+        date=collection_dt
+        or fhir_utils.to_fhir_datetime(
+            datetime.datetime.now(datetime.timezone.utc)
+        ),
         title=datatypes_pb2.String(value="Diagnostic Report Record"),
     )
     if practitioner_ref:
-      composition.author.add().uri.value = practitioner_ref
+      composition.author.add(uri=datatypes_pb2.String(value=practitioner_ref))
+    elif organization_ref:
+      composition.author.add(uri=datatypes_pb2.String(value=organization_ref))
 
     # Add section to Composition
     section = composition.section.add()

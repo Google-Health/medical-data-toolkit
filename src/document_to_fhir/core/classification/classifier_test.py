@@ -353,6 +353,53 @@ class ClassifierTest(absltest.TestCase):
     actual_output = c._merge_outputs(document_classification_outputs)
     self.assertEqual(expected_segments, actual_output.segments)
 
+  def test_sort_document_segments(self):
+    doc = standardized_composite_medical_document.CompositeDocument(
+        segments=[
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+                start_page=5,
+                end_page=5,
+                reasoning="Rx 1",
+            ),
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.LABORATORY_REPORT,
+                start_page=1,
+                end_page=2,
+                reasoning="Lab 1",
+            ),
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+                start_page=3,
+                end_page=4,
+                reasoning="Rx 2",
+            ),
+        ]
+    )
+
+    sorted_doc = classifier.sort_document_segments(doc)
+
+    expected_segments = [
+        standardized_composite_medical_document.DocumentSegment(
+            document_type=document_types.MedicalDocumentType.LABORATORY_REPORT,
+            start_page=1,
+            end_page=2,
+            reasoning="Lab 1",
+        ),
+        standardized_composite_medical_document.DocumentSegment(
+            document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+            start_page=3,
+            end_page=4,
+            reasoning="Rx 2",
+        ),
+        standardized_composite_medical_document.DocumentSegment(
+            document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+            start_page=5,
+            end_page=5,
+            reasoning="Rx 1",
+        ),
+    ]
+    self.assertEqual(sorted_doc.segments, expected_segments)
 
 if __name__ == "__main__":
   absltest.main()

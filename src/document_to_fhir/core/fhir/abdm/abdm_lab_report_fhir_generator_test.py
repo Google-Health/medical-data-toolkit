@@ -14,6 +14,7 @@
 import datetime
 import json
 import os
+from unittest import mock
 import uuid
 
 from absl.testing import absltest
@@ -33,6 +34,24 @@ TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "data/lab_report")
 class AbdmLabReportFhirGeneratorTest(
     absltest.TestCase
 ):
+
+  def _create_default_patient(self) -> resources.Patient:
+    return resources.Patient(
+        name="John Doe",
+        identifiers=resources.PatientIdentifiers(mr="MR123"),
+        dob=None,
+        gender="male",
+    )
+
+  def _create_default_organization(
+      self,
+  ) -> resources.Organization[abdm_resources.AbdmOrganizationIdentifiers]:
+    return resources.Organization[abdm_resources.AbdmOrganizationIdentifiers](
+        name="General Hospital",
+        identifiers=None,
+        address=None,
+        contact=None,
+    )
 
   def test_generate_fhir(self):
     generator = abdm_lab_report_fhir_generator.AbdmLabReportFhirGenerator()
@@ -149,6 +168,71 @@ class AbdmLabReportFhirGeneratorTest(
     # Verify DiagnosticReport references the panel and the unpanelled test
     report = diagnostic_reports[0]
     self.assertLen(report.result, 2) # Panel + Cholesterol
+
+  def test_generate_fhir_missing_collection_time_date_fallback(self):
+    # Mock datetime.datetime in the generator module
+    fixed_time = datetime.datetime(
+        2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
+    )
+
+    class MockDateTime(datetime.datetime):
+
+      @classmethod
+      def now(cls, tz=None):
+        return fixed_time
+
+    patient_data = self._create_default_patient()
+    org_data = self._create_default_organization()
+    doc = abdm_medical_documents.AbdmLabReport(
+        patient=patient_data,
+        practitioner=None,
+        service_provider=org_data,
+        lab_tests=[],
+        sample_collection_time=None,
+    )
+
+    generator = abdm_lab_report_fhir_generator.AbdmLabReportFhirGenerator()
+
+    with mock.patch.object(
+        abdm_lab_report_fhir_generator.datetime, "datetime", MockDateTime
+    ):
+      bundle = generator.generate_fhir(doc)
+
+    comp = bundle.entry[0].resource.composition
+    expected_us = int(fixed_time.timestamp() * 1_000_000)
+    self.assertEqual(comp.date.value_us, expected_us)
+    self.assertEqual(comp.date.timezone, "UTC")
+
+  def test_generate_fhir_missing_practitioner_author_fallback(self):
+    patient_data = self._create_default_patient()
+    org_data = self._create_default_organization()
+    doc = abdm_medical_documents.AbdmLabReport(
+        patient=patient_data,
+        practitioner=None,
+        service_provider=org_data,
+        lab_tests=[],
+        sample_collection_time=datetime.datetime(
+            2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
+        ),
+    )
+
+    generator = abdm_lab_report_fhir_generator.AbdmLabReportFhirGenerator()
+    bundle = generator.generate_fhir(doc)
+
+    comp = bundle.entry[0].resource.composition
+    self.assertLen(comp.author, 1)
+    author_ref = comp.author[0].uri.value
+    self.assertStartsWith(author_ref, "urn:uuid:")
+
+    org_id = None
+    for entry in bundle.entry:
+      if entry.resource.HasField("organization"):
+        org_id = entry.resource.organization.id.value
+        break
+
+    self.assertIsNotNone(org_id, "Organization not found in bundle")
+    self.assertEqual(author_ref, f"urn:uuid:{org_id}")
+
 
 if __name__ == "__main__":
   absltest.main()

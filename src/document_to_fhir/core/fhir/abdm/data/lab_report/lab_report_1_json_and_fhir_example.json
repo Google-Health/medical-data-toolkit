@@ -270,7 +270,7 @@
           },
           "effectiveDateTime": "2026-01-01T10:00:00Z",
           "valueQuantity": {
-            "value": 100.0,
+            "value": 100,
             "unit": "mg/dL",
             "system": "http://unitsofmeasure.org",
             "code": "mg/dL"

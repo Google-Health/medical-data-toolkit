@@ -37,7 +37,10 @@ from src.document_to_fhir.core.classification import classifier
 from src.document_to_fhir.core.extraction.extractors import lab_report_extractor
 from src.document_to_fhir.core.fhir.abdm import abdm_lab_report_fhir_generator
 from src.document_to_fhir.core.medical_coding.loinc import query as loinc_query
-from src.document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte import index as analyte_index
+from src.document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte import index as analyte_index_lib
+from src.document_to_fhir.core.medical_coding.loinc.axes_kb.property import mapper as property_mapper_lib
+from src.document_to_fhir.core.medical_coding.loinc.axes_kb.scale_type import mapper as scale_mapper_lib
+from src.document_to_fhir.core.medical_coding.loinc.axes_kb.system import mapper as systems_mapper
 from src.document_to_fhir.core.medical_coding.mapper.terminology_mappers import loinc_terminology_mapper
 from src.document_to_fhir.core.orchestrator import composite_document_standardizer
 from src.document_to_fhir.core.orchestrator import medical_document_standardizer
@@ -320,6 +323,7 @@ def _create_llm_client(config: Mapping[str, Any]) -> model_client.LLMClient:
         timeout=params.get('timeout', 300.0),
         max_retries=params.get('max_retries', 3),
         supports_pdf=params.get('supports_pdf', False),
+        enable_thinking=params.get('enable_thinking', False),
     )
   else:
     raise ValueError(f'Unsupported LLMClient type: {client_type}')
@@ -334,15 +338,36 @@ def _create_standardizer_map(
   """Creates the map of standardizers based on configuration."""
   standardizer_map = {}
   loinc_analaytes_index_csv_path = config.get('loinc_analaytes_index_csv_path')
+  loinc_system_kb_csv_path = config.get('loinc_system_kb_csv_path')
+  loinc_property_kb_csv_path = config.get('loinc_property_kb_csv_path')
 
   if not loinc_analaytes_index_csv_path:
     raise ValueError(
         'loinc_analaytes_index_csv_path is required in config for terminology'
         ' mapping.'
     )
+  if not loinc_system_kb_csv_path:
+    raise ValueError('loinc_system_kb_csv_path is required in config.')
+  if not loinc_property_kb_csv_path:
+    raise ValueError('loinc_property_kb_csv_path is required in config.')
 
-  idx = analyte_index.AnalytesIndex.from_csv(loinc_analaytes_index_csv_path)
-  query_engine = loinc_query.LoincQueryEngine(idx)
+  analyte_index = analyte_index_lib.AnalytesIndex.from_csv(
+      loinc_analaytes_index_csv_path
+  )
+  system_mapper = systems_mapper.SpecimenToSystemMapper.from_csv(
+      loinc_system_kb_csv_path
+  )
+  property_mapper = property_mapper_lib.UnitToPropertyMapper.from_csv(
+      loinc_property_kb_csv_path
+  )
+  scale_mapper = scale_mapper_lib.ScaleMapper()
+
+  query_engine = loinc_query.LoincQueryEngine(
+      analyte_index=analyte_index,
+      system_mapper=system_mapper,
+      scale_mapper=scale_mapper,
+      property_mapper=property_mapper,
+  )
   mapper = loinc_terminology_mapper.LoincTerminologyMapper(query_engine)
   mapper_registry = {resources.LabTest: mapper}
 

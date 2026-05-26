@@ -23,6 +23,15 @@ extractor_llm_client:
     model: "gemini-3-flash-preview"
     api_key_env: "GEMINI_API_KEY"
 
+# Alternative configuration for Gemma using LiteLLM with thinking support:
+# extractor_llm_client:
+#   type: "LiteLLMClient"
+#   parameters:
+#     model: "vllm/google/gemma-4-31B-it"
+#     api_key_env: "LITELLM_API_KEY"
+#     api_base: "http://localhost:8000/v1"
+#     enable_thinking: true
+
 supported_types:
   - "LABORATORY_REPORT"
 
@@ -38,13 +47,15 @@ document_standardization_policy: ACCEPT_ALL
 # patients, as it will link the entire document to only the first identified patient.
 ATTACH_DOCUMENT_TO_BUNDLE: false
 
-# Path to the CSV file containing LOINC analytes index data.
-# This file is required for terminology mapping (e.g. mapping lab tests to LOINC codes).
-# In a Docker environment, this file is typically not part of the codebase and should be:
-# 1. Mounted as a volume from the host to the container (e.g., -v /host/path/to/loinc_analaytes_index.csv:/data/loinc_analaytes_index.csv).
+# Paths to the CSV files containing LOINC Knowledge Base data.
+# These files are required for terminology mapping (e.g. mapping lab tests to LOINC codes).
+# In a Docker environment, these files are typically not part of the codebase and should be:
+# 1. Mounted as a volume from the host to the container (e.g., -v /host/path/to/kbs/:/data/).
 # 2. Or downloaded during container startup by an entrypoint script.
 #
-# IMPORTANT: If mounting from host, ensure the file has read permissions for others
-# (e.g., `chmod 644 /path/to/loinc_analaytes_index.csv`) and the containing directory is accessible
-# (e.g., `chmod 755 /path/to/dir`) so that the non-root user in the container can read it.
-loinc_analaytes_index_csv_path: "/data/loinc_analaytes_index.csv"
+# IMPORTANT: If mounting from host, ensure the files have read permissions for others
+# (e.g., `chmod 644 /path/to/*.csv`) and the containing directory is accessible
+# (e.g., `chmod 755 /path/to/dir`) so that the non-root user in the container can read them.
+loinc_analaytes_index_csv_path: "/data/analyte_records_top_2000.csv"
+loinc_system_kb_csv_path: "/data/loinc_axis_system_kb_top_2000.csv"
+loinc_property_kb_csv_path: "/data/loinc_axis_property_kb_top_2000.csv"

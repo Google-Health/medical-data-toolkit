@@ -39,6 +39,27 @@ TARGET_PDF_TO_IMAGE_DPI = 300
 LARGE_CHUNK_SIZE = 999999
 
 
+def sort_document_segments(
+    doc: standardized_composite_medical_document.CompositeDocument,
+) -> standardized_composite_medical_document.CompositeDocument:
+  """Sorts the document segments in ascending order by page range.
+
+  Sorts primarily by start_page, and uses end_page as a secondary tie-breaker.
+
+  Args:
+      doc: The CompositeDocument containing the list of segments.
+
+  Returns:
+      The CompositeDocument with its segments sorted.
+  """
+  sorted_segments = sorted(
+      doc.segments, key=lambda seg: (seg.start_page, seg.end_page)
+  )
+  return standardized_composite_medical_document.CompositeDocument(
+      segments=sorted_segments
+  )
+
+
 class DocumentClassifierBase(abc.ABC):
   """Base class for document classifiers."""
 
@@ -94,7 +115,7 @@ class DocumentClassifierBase(abc.ABC):
       data: Union[bytes, list[bytes]],
       prompt: str,
       mime_type: str = "application/pdf",
-      chunk_size: int = 20,
+      chunk_size: int = 15,
       overlap: int = 1,
   ) -> list[list[Any]]:
     """Prepares the request contents for the LLM client.
@@ -167,12 +188,22 @@ class MultiDocumentClassifier(DocumentClassifierBase):
     Returns:
       A CompositeDocument parsed from the LLM's response.
     """
+
+    def post_process_classification(parsed_json):
+      if isinstance(parsed_json, list):
+        logging.warning(
+            "Post-processing: Wrapping list in CompositeDocument segments."
+        )
+        return {"segments": parsed_json}
+      return parsed_json
+
     response = self.client.generate_content(
         contents=contents,
         schema=standardized_composite_medical_document.CompositeDocument,
         config={
             "temperature": temperature,
         },
+        post_process=post_process_classification,
     )
 
     if response.parsed:
@@ -249,7 +280,7 @@ class MultiDocumentClassifier(DocumentClassifierBase):
       prompt: str | None = None,
       temperature: float = 0.0,
       split_into_chunks: bool = True,
-      chunk_size: int = 20,
+      chunk_size: int = 15,
       mime_type: str = "application/pdf",
   ) -> standardized_composite_medical_document.CompositeDocument:
     """Classifies a multi-page medical document into segments.
@@ -307,7 +338,9 @@ class MultiDocumentClassifier(DocumentClassifierBase):
       if composite_document_part is None:
         logging.error("Chunk %d returned None, skipping.", index + 1)
         continue
-      document_classification_outputs.append(composite_document_part)
+      document_classification_outputs.append(
+          sort_document_segments(composite_document_part)
+      )
 
     merged_output = self._merge_outputs(document_classification_outputs)
     return merged_output

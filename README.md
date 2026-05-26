@@ -84,7 +84,7 @@ The current API is synchronous and optimized for processing small files fast.
 
 ## Getting Started Locally
 
-####1. Clone the GitHub Repository
+#### 1. Clone the GitHub Repository
 
 ```bash
 
@@ -92,7 +92,10 @@ git clone https://github.com/Google-Health/medical-data-toolkit
 
 ```
 
-####2. Build the Medical Data Toolkit Container
+#### 2. Build Offline Knowledge Bases
+Constructing the LOINC Knowledge Bases (Analyte, System, Property) is required for full terminology mapping functionality. Detailed instructions can be found in the [LOINC README](src/document_to_fhir/core/medical_coding/loinc/README.md).
+
+#### 3. Build the Medical Data Toolkit Container
 
 Execute from the directory containing the toolkits Dockerfile.
 
@@ -102,7 +105,7 @@ docker build -t medical-data-toolkit-image .
 
 ```
 
-####3. Run the Container
+#### 4. Run the Container
 
 ```bash
 
@@ -110,7 +113,7 @@ docker run --name medical-data-toolkit-container -p 8080:8080 -d medical-data-to
 
 ```
 
-####4. Call the Running Container
+#### 5. Call the Running Container
 
 **Example Client Usage (Console)**
 
@@ -140,7 +143,7 @@ with requests.post(url, data=pdf_bytes) as response:
     print("Error:", response.text)
 ```
 
-####5. Stop the Container and Cleanup (Optional)
+#### 6. Stop the Container and Cleanup (Optional)
 
 ```bash
 

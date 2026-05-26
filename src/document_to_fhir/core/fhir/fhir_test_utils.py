@@ -31,7 +31,7 @@ def normalize_fhir_bundle(bundle: message.Message):
     bundle: A FHIR bundle proto to normalize.
   """
   _clear_nested_fields(
-      bundle, ['id', 'full_url', 'uri', 'timezone', 'version_id']
+      bundle, ['id', 'full_url', 'uri', 'timezone', 'version_id', 'date']
   )
 
 

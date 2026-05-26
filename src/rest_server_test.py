@@ -272,11 +272,17 @@ class RestServerTest(absltest.TestCase):
         'supported_types': ['LABORATORY_REPORT'],
         'document_standardization_policy': 'ALLOW_ONLY_SUPPORTED',
         'loinc_analaytes_index_csv_path': 'dummy.csv',
+        'loinc_system_kb_csv_path': 'dummy_system.csv',
+        'loinc_property_kb_csv_path': 'dummy_property.csv',
     }
 
     with unittest.mock.patch(
-        'src.rest_server.analyte_index.AnalytesIndex.from_csv'
-    ) as mock_from_csv:
+        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte.index.AnalytesIndex.from_csv'
+    ) as mock_from_csv, unittest.mock.patch(
+        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.system.mapper.SpecimenToSystemMapper.from_csv'
+    ), unittest.mock.patch(
+        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.property.mapper.UnitToPropertyMapper.from_csv'
+    ):
       mock_from_csv.return_value = unittest.mock.MagicMock()
       standardizer = rest_server.get_composite_standardizer()
       mock_standardizer_class.assert_called_once_with(

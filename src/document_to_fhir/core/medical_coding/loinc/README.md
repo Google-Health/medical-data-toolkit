@@ -41,6 +41,7 @@ contains:
 1.  **LOINC Dataset**: Download the official LOINC Table (CSV) from
     [loinc.org](https://loinc.org/downloads/loinc-table/).
 2.  **API Access**: Ensure you have a valid LLM API key.
+3.  **Python Version**: Tested with Python 3.13.12.
 
 ### Setup
 Configure your environment:
@@ -66,11 +67,13 @@ To run the library in a standard Python environment (simulating open source):
 python -m venv venv
 source venv/bin/activate  # Or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-python -m axes_kb.<axis_name>.builder_main \
+python -m src.document_to_fhir.core.medical_coding.loinc.axes_kb.<axis_name>.builder_main \
   --loinc_csv_path="/path/to/input/LoincTable.csv" \
   --output_csv_folder="/path/to/output/folder/" \
-  --max_rank=100 \
-  --limit=5
+  --client_type="litellm" \
+  --model_name="gemma-4-26b-a4b-it" \
+  --max_rank=2000 \
+  --workers=10
 ```
 
 Where `<axis_name>` corresponds to the axis you want to build
@@ -96,6 +99,7 @@ Where `<axis_name>` corresponds to the axis you want to build
 Once the Knowledge Base is built, use the `LoincQueryEngine` to perform searches.
 
 ```python
+from document_to_fhir.common.schema import resources
 from document_to_fhir.core.medical_coding.loinc import query
 from document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte import index
 from document_to_fhir.core.medical_coding.loinc.axes_kb.system import mapper as system_mapper_lib
@@ -118,16 +122,16 @@ engine = query.LoincQueryEngine(
 )
 
 # 3. Execute a query
-lab_test = {
-    "core_analyte": "Glucose",
-    "specimen": "urine",
-    "name": "Glucose Random",
-    "result": "100.5",
-    "unit": "mg/dL"
-}
+lab_test = resources.LabTest(
+    core_analyte="Glucose",
+    specimen="urine",
+    name="Glucose Random",
+    result="100.5",
+    unit="mg/dL"
+)
 results = engine.query(lab_test)
 
 for rec in results:
-    print(f"LOINC: {rec['LOINC_NUM']} | Name: {rec['LONG_COMMON_NAME']}")
+    print(f"LOINC: {rec.loinc_num} | Name: {rec.long_common_name}")
 ```
 

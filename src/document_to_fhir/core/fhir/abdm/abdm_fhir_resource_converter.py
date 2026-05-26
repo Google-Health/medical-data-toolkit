@@ -14,6 +14,7 @@
 """Converts internal medical document models to ABDM FHIR resources."""
 
 import datetime
+import decimal
 import re
 
 from google.fhir.r4.proto.core import codes_pb2
@@ -34,6 +35,16 @@ _RANGE_REGEX = re.compile(r"\s*([0-9.]+)\s*-\s*([0-9.]+)\s*")
 # Regular expression to parse reference range threshold strings like '>=1.0' or
 # '< 2.0'.
 _THRESHOLD_REGEX = re.compile(r"\s*(<|>|<=|>=)\s*([0-9.]+)\s*")
+
+
+def _normalize_fhir_decimal(val_str: str) -> str | None:
+  try:
+    d = decimal.Decimal(val_str)
+    if d.is_finite():
+      return str(d)
+  except (decimal.InvalidOperation, ValueError):
+    pass
+  return None
 
 
 def _add_identifier(
@@ -309,15 +320,15 @@ def create_lab_observation(
   if organization_ref:
     obs.performer.add().uri.value = organization_ref
 
-  if lab_test.result is not None:
-    try:
-      result_value = float(lab_test.result)
-      obs.value.quantity.value.value = str(result_value)
+  if lab_test.result is not None and lab_test.result.strip() != "":
+    norm_result = _normalize_fhir_decimal(lab_test.result)
+    if norm_result is not None:
+      obs.value.quantity.value.value = norm_result
       if lab_test.unit:
         obs.value.quantity.unit.value = lab_test.unit
         obs.value.quantity.system.value = "http://unitsofmeasure.org"
         obs.value.quantity.code.value = lab_test.unit
-    except (ValueError, TypeError):
+    else:
       obs.value.string_value.value = str(lab_test.result)
 
   if lab_test.reference_range:
@@ -334,31 +345,36 @@ def create_lab_observation(
       match = _RANGE_REGEX.fullmatch(range_str_without_unit)
       if match:
         low_val, high_val = match.groups()
-        rr.low.value.value = low_val
-        rr.low.system.value = "http://unitsofmeasure.org"
-        rr.high.value.value = high_val
-        rr.high.system.value = "http://unitsofmeasure.org"
-        if lab_test.unit:
-          rr.low.unit.value = lab_test.unit
-          rr.low.code.value = lab_test.unit
-          rr.high.unit.value = lab_test.unit
-          rr.high.code.value = lab_test.unit
+        norm_low = _normalize_fhir_decimal(low_val)
+        norm_high = _normalize_fhir_decimal(high_val)
+        if norm_low and norm_high:
+          rr.low.value.value = norm_low
+          rr.low.system.value = "http://unitsofmeasure.org"
+          rr.high.value.value = norm_high
+          rr.high.system.value = "http://unitsofmeasure.org"
+          if lab_test.unit:
+            rr.low.unit.value = lab_test.unit
+            rr.low.code.value = lab_test.unit
+            rr.high.unit.value = lab_test.unit
+            rr.high.code.value = lab_test.unit
       # Threshold regex supports formats like '>=1.0' or '< 2.0'.
       match = _THRESHOLD_REGEX.fullmatch(range_str_without_unit)
       if match:
         operator, value = match.groups()
-        if operator == ">=" or operator == ">":
-          rr.low.value.value = value
-          rr.low.system.value = "http://unitsofmeasure.org"
-          if lab_test.unit:
-            rr.low.unit.value = lab_test.unit
-            rr.low.code.value = lab_test.unit
-        elif operator == "<" or operator == "<=":
-          rr.high.value.value = value
-          rr.high.system.value = "http://unitsofmeasure.org"
-          if lab_test.unit:
-            rr.high.unit.value = lab_test.unit
-            rr.high.code.value = lab_test.unit
+        norm_val = _normalize_fhir_decimal(value)
+        if norm_val:
+          if operator == ">=" or operator == ">":
+            rr.low.value.value = norm_val
+            rr.low.system.value = "http://unitsofmeasure.org"
+            if lab_test.unit:
+              rr.low.unit.value = lab_test.unit
+              rr.low.code.value = lab_test.unit
+          elif operator == "<" or operator == "<=":
+            rr.high.value.value = norm_val
+            rr.high.system.value = "http://unitsofmeasure.org"
+            if lab_test.unit:
+              rr.high.unit.value = lab_test.unit
+              rr.high.code.value = lab_test.unit
       # If no pattern matches for range, set the text value.
       if not rr.low.value.value and not rr.high.value.value:
         rr.text.value = range_str
