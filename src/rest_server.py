@@ -15,7 +15,9 @@
 
 from collections.abc import Mapping, Sequence
 import io
+import logging as std_logging
 import os
+import sys
 import threading
 from typing import Any
 
@@ -150,13 +152,15 @@ def _document_to_fhir(file_bytes: bytes, mime_type: str) -> flask.Response:
       pydantic.ValidationError,
       model_client.ResponseParsingError,
   ) as e:
-    logging.exception(
-        'Document standardization failed with validation/parsing error: %s', e
+    logging.error(
+        'Document standardization failed with validation/parsing error.'
     )
+    logging.debug('Validation/parsing error details:', exc_info=e)
     return _flask_error(f'Document standardization failed: {e}', 422)
   except Exception as e:  # pylint: disable=broad-except
-    logging.exception('Unexpected error during document standardization: %s', e)
-    return _flask_error(f'Failed to convert document to FHIR: {e}', 500)
+    logging.error('Unexpected error during document standardization.')
+    logging.debug('Unexpected error details:', exc_info=e)
+    return _flask_error('Failed to convert document to FHIR.', 500)
 
 
 def _pdf_page_count(file_bytes: bytes) -> int:
@@ -319,6 +323,7 @@ def _create_llm_client(config: Mapping[str, Any]) -> model_client.LLMClient:
         api_base=params.get('api_base'),
         api_key=api_key,
         temperature=params.get('temperature', 0.0),
+        config=params.get('config'),
         verbose=params.get('verbose', False),
         timeout=params.get('timeout', 300.0),
         max_retries=params.get('max_retries', 3),
@@ -399,6 +404,29 @@ def _create_standardizer_map(
 
 def main(unused_argv: Sequence[str]):
   """Main entry point for the server."""
+  # Default to ERROR level
+  log_level = std_logging.INFO
+
+  try:
+    config_file = _CONFIG_FILE.value
+  except flags.UnparsedFlagAccessError:
+    config_file = None
+
+  if config_file and os.path.exists(config_file):
+    try:
+      with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+      log_level_str = config.get('logging_level', 'INFO').upper()
+      log_level = getattr(std_logging, log_level_str, std_logging.INFO)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+      sys.stderr.write(f'Failed to load logging level from config: {e}\n')
+
+  # Configure the root logger
+  std_logging.getLogger().setLevel(log_level)
+  logging.info(
+      'Server starting with log level: %s', std_logging.getLevelName(log_level)
+  )
+
   GunicornApplication(flask_app).run()
 
 

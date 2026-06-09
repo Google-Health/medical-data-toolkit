@@ -30,7 +30,7 @@ from src.document_to_fhir.core.orchestrator import medical_document_standardizer
 
 
 # Standard DPI for PDF to Image conversion
-TARGET_PDF_TO_IMAGE_DPI = 200
+TARGET_PDF_TO_IMAGE_DPI = 300
 
 
 class CompositeDocumentStandardizer:

@@ -20,6 +20,7 @@ with analyte information (like core analytes and synonyms) using an
 
 import concurrent.futures
 import json
+import logging
 from typing import Any
 
 import pandas
@@ -71,43 +72,49 @@ class AnalyteKBBuilder:
     Returns:
       An `AnalyteIndex` instance populated with the enriched analyte data.
     """
-    print(
-        f"--- Starting KB Build (Workers: {self.workers}, LOINCS:"
-        f" {len(self.df_loinc)}) ---"
+    logging.info(
+        "--- Starting KB Build (Workers: %d, LOINCS: %d) ---",
+        self.workers,
+        len(self.df_loinc),
     )
 
     # 1. Generate (The heavy lifting) with Interrupt Safety
     records, errors = self._generate_enriched_records()
 
     if errors:
-      print(f"  [Info] {len(errors)} rows failed processing.")
-      print("  [Debug] Sample errors:")
-      for i, err in enumerate(errors[:5]):
-        print(f"    - LOINC {err.get('LOINC_NUM', 'N/A')}: {err.get('error')}")
-        if i == 4 and len(errors) > 5:
-          print("    ...")
+      logging.info("  [Info] %d rows failed processing.", len(errors))
+      logging.debug("  [Debug] Sample errors:")
+      for err in errors[:5]:
+        logging.debug(
+            "    - LOINC %s: %s",
+            err.get("LOINC_NUM", "N/A"),
+            err.get("error"),
+        )
+      if len(errors) > 5:
+        logging.debug("    ...")
 
     if not records:
-      print("  [Warning] No valid records were processed.")
+      logging.warning("  [Warning] No valid records were processed.")
       return index.AnalytesIndex()
 
     # 2. Save Valid Records
     if save_csv_path:
       try:
         pandas.DataFrame(records).to_csv(save_csv_path, index=False)
-        print(
-            f"  [Checkpoint] Enriched KB ({len(records)} records) saved to:"
-            f" {save_csv_path}"
+        logging.info(
+            "  [Checkpoint] Enriched KB (%d records) saved to: %s",
+            len(records),
+            save_csv_path,
         )
       except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"  [Warning] Failed to save CSV cache: {e}")
+        logging.warning("  [Warning] Failed to save CSV cache: %s", e)
 
     # 3. Populate Index
-    print("  [Phase 2] Building Search Index...")
+    logging.info("  [Phase 2] Building Search Index...")
     analyte_index = index.AnalytesIndex()
     analyte_index.load_data(records)
 
-    print(f"--- Build Complete. Indexed {len(records)} records. ---")
+    logging.info("--- Build Complete. Indexed %d records. ---", len(records))
     return analyte_index
 
   def _generate_enriched_records(
@@ -127,7 +134,7 @@ class AnalyteKBBuilder:
         - error_records: A list of dictionaries for records that failed
           processing, containing error details.
     """
-    print("  [Phase 1] Generating Analyte Data via LLM...")
+    logging.info("  [Phase 1] Generating Analyte Data via LLM...")
     enriched_results = []
     error_records = []
     process_args = [(idx, row) for idx, row in self.df_loinc.iterrows()]
@@ -156,19 +163,20 @@ class AnalyteKBBuilder:
             loinc_num = self.df_loinc.iloc[row_idx].get(
                 config.LOINC_NUM_KEY, "N/A"
             )
-            print(
-                "  [Row Error] Unexpected error processing LOINC"
-                f" {loinc_num}: {e}"
+            logging.error(
+                "  [Row Error] Unexpected error processing LOINC %s: %s",
+                loinc_num,
+                e,
             )
             error_records.append(
                 {"error": str(e), config.LOINC_NUM_KEY: loinc_num}
             )
             pbar.update(1)
     except KeyboardInterrupt:
-      print("\n\n" + "!" * 60)
-      print("  [USER INTERRUPT DETECTED] Stopping gracefully...")
-      print(f"  Captured {len(enriched_results)} records so far.")
-      print("!" * 60 + "\n")
+      logging.warning("[USER INTERRUPT DETECTED] Stopping gracefully...")
+      logging.warning(
+          "Captured %d records so far.", len(enriched_results)
+      )
       for f in future_to_row:
         f.cancel()
       executor.shutdown(wait=False)

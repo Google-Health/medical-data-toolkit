@@ -17,6 +17,7 @@ This module provides a class to translate raw unit strings into
 standardized LOINC property categories.
 """
 
+import logging
 import pandas as pd
 
 
@@ -53,11 +54,11 @@ class UnitToPropertyMapper:
           unit_to_properties[unit].add(prop)
 
       else:
-        print(
-            f"Warning: CSV {csv_path} missing 'property' or 'synonym' columns."
+        logging.warning(
+            "CSV %s missing 'property' or 'synonym' columns.", csv_path
         )
     except FileNotFoundError:
-      print(f"Warning: Property mapping file not found at {csv_path}.")
+      logging.warning("Property mapping file not found at %s.", csv_path)
 
     return cls(unit_to_properties)
 

@@ -278,9 +278,8 @@ def parse_structured_response(
     err_msg = "JSON decoding or processing failed"
     if isinstance(e, pydantic.ValidationError):
       err_msg = "Pydantic validation failed"
-      logging.error(
-          "%s. Errors:\n%s", err_msg, json.dumps(e.errors(), indent=2)
-      )
+      logging.error("%s", err_msg)
+      logging.error("Errors:\n%s", json.dumps(e.errors(), indent=2))
       logging.debug(
           "JSON content that failed validation:\n%s",
           json.dumps(parsed_json, indent=2),
@@ -489,6 +488,8 @@ class LiteLLMClient(LLMClient):
       completion_args["api_key"] = self.api_key
     if schema and "response_format" in supported_params:
       completion_args["response_format"] = schema
+    if "extra_body" in merged_config:
+      completion_args["extra_body"] = merged_config["extra_body"]
 
     if self.verbose:
       logging.info("LiteLLM Request: model=%s", self.model)
@@ -507,7 +508,9 @@ class LiteLLMClient(LLMClient):
       return redacted_msgs
 
     if self.verbose:
-      logging.info("LiteLLM Request: messages=%s", _redact_image_urls(messages))
+      logging.debug(
+          "LiteLLM Request: messages=%s", _redact_image_urls(messages)
+      )
 
     def _make_request():
       response = litellm.completion(**completion_args)

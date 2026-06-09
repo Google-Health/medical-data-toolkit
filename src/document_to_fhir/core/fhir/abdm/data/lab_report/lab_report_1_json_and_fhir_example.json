@@ -26,7 +26,35 @@
         "result": "100",
         "unit": "mg/dL",
         "loinc_code": "2345-7",
-        "loinc_common_name": "Glucose [Mass/volume] in Serum or Plasma"
+        "loinc_common_name": "Glucose [Mass/volume] in Serum or Plasma",
+        "reference_range": [
+          {
+            "low": "70",
+            "high": "100",
+            "text": "70 - 100"
+          }
+        ]
+      },
+      {
+        "core_analyte": "HbA1c",
+        "name": "HbA1c",
+        "result": "5.5",
+        "unit": "%",
+        "loinc_code": "4548-4",
+        "loinc_common_name": "Hemoglobin A1c/Hemoglobin.total in Blood",
+        "reference_range": [
+          {
+            "low": "4.0",
+            "high": "6.5",
+            "text": "4.0-6.5; Non diabetic adults >=18years <5.7; Prediabetes (At Risk ) 5.7-6.4; Diagnosing Diabetes >= 6.5"
+          },
+          {
+            "low": "4.5",
+            "high": "6.0",
+            "applies_to": "Male",
+            "text": "Male 4.5-6.0"
+          }
+        ]
       }
     ],
     "sample_collection_time": "2026-01-01T10:00:00+00:00"
@@ -275,6 +303,109 @@
             "system": "http://unitsofmeasure.org",
             "code": "mg/dL"
           },
+          "referenceRange": [
+            {
+              "low": {
+                "value": 70,
+                "unit": "mg/dL",
+                "system": "http://unitsofmeasure.org",
+                "code": "mg/dL"
+              },
+              "high": {
+                "value": 100,
+                "unit": "mg/dL",
+                "system": "http://unitsofmeasure.org",
+                "code": "mg/dL"
+              },
+              "text": "70 - 100"
+            }
+          ],
+          "performer": [
+            {
+              "reference": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:d75ef10f-b95a-4a21-b0bc-d5f236522b90",
+        "resource": {
+          "resourceType": "Observation",
+          "id": "d75ef10f-b95a-4a21-b0bc-d5f236522b90",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ],
+          "code": {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "4548-4",
+                "display": "Hemoglobin A1c/Hemoglobin.total in Blood"
+              }
+            ],
+            "text": "Hemoglobin A1c/Hemoglobin.total in Blood"
+          },
+          "subject": {
+            "reference": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183"
+          },
+          "effectiveDateTime": "2026-01-01T10:00:00Z",
+          "valueQuantity": {
+            "value": 5.5,
+            "unit": "%",
+            "system": "http://unitsofmeasure.org",
+            "code": "%"
+          },
+          "referenceRange": [
+            {
+              "low": {
+                "value": 4.0,
+                "unit": "%",
+                "system": "http://unitsofmeasure.org",
+                "code": "%"
+              },
+              "high": {
+                "value": 6.5,
+                "unit": "%",
+                "system": "http://unitsofmeasure.org",
+                "code": "%"
+              },
+              "text": "4.0-6.5; Non diabetic adults >=18years <5.7; Prediabetes (At Risk ) 5.7-6.4; Diagnosing Diabetes >= 6.5"
+            },
+            {
+              "low": {
+                "value": 4.5,
+                "unit": "%",
+                "system": "http://unitsofmeasure.org",
+                "code": "%"
+              },
+              "high": {
+                "value": 6.0,
+                "unit": "%",
+                "system": "http://unitsofmeasure.org",
+                "code": "%"
+              },
+              "appliesTo": [
+                {
+                  "text": "Male"
+                }
+              ],
+              "text": "Male 4.5-6.0"
+            }
+          ],
           "performer": [
             {
               "reference": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1"
@@ -332,6 +463,9 @@
           "result": [
             {
               "reference": "urn:uuid:d65ef10f-b95a-4a21-b0bc-d5f236522b89"
+            },
+            {
+              "reference": "urn:uuid:d75ef10f-b95a-4a21-b0bc-d5f236522b90"
             }
           ]
         }

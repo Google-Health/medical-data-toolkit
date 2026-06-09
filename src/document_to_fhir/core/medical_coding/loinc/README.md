@@ -66,7 +66,7 @@ To run the library in a standard Python environment (simulating open source):
 ```bash
 python -m venv venv
 source venv/bin/activate  # Or venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -r src/document_to_fhir/core/medical_coding/loinc/requirements.txt
 python -m src.document_to_fhir.core.medical_coding.loinc.axes_kb.<axis_name>.builder_main \
   --loinc_csv_path="/path/to/input/LoincTable.csv" \
   --output_csv_folder="/path/to/output/folder/" \

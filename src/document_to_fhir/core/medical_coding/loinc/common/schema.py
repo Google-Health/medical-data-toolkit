@@ -13,12 +13,22 @@
 # limitations under the License.
 """Defines common type schemas and Pydantic models used in LOINC mapping."""
 
-from typing import Optional
+import math
+from typing import Any, Optional
 import pydantic
 
 
+def _clean_nan(v: Any) -> Any:
+  if isinstance(v, float) and math.isnan(v):
+    return None
+  return v
+
+
 class LoincRow(pydantic.BaseModel):
-  """Represents a candidate LOINC record returned by query engines."""
+  """Represents a candidate LOINC record returned by query engines.
+
+  The keys are standard LOINC column names.
+  """
 
   loinc_num: str = pydantic.Field(alias="LOINC_NUM")
   core_analyte: Optional[str] = pydantic.Field(
@@ -29,9 +39,16 @@ class LoincRow(pydantic.BaseModel):
   )
   system: Optional[str] = pydantic.Field(default=None, alias="SYSTEM")
   property: Optional[str] = pydantic.Field(default=None, alias="PROPERTY")
-  scale_typ: Optional[str] = pydantic.Field(default=None, alias="SCALE_TYPE")
+  scale_typ: Optional[str] = pydantic.Field(default=None, alias="SCALE_TYP")
   common_test_rank: Optional[int] = pydantic.Field(
       default=None, alias="COMMON_TEST_RANK"
   )
 
   model_config = pydantic.ConfigDict(populate_by_name=True)
+
+  @pydantic.model_validator(mode="before")
+  @classmethod
+  def clean_nans(cls, data: Any) -> Any:
+    if isinstance(data, dict):
+      return {k: _clean_nan(v) for k, v in data.items()}
+    return data

@@ -15,7 +15,6 @@
 
 import datetime
 import decimal
-import re
 
 from google.fhir.r4.proto.core import codes_pb2
 from google.fhir.r4.proto.core import datatypes_pb2
@@ -29,12 +28,6 @@ from google.fhir.r4.proto.core.resources import practitioner_pb2
 from src.document_to_fhir.common.schema import resources
 from src.document_to_fhir.common.schema.abdm import abdm_resources
 from src.document_to_fhir.core.fhir import fhir_utils
-
-# Regular expression to parse reference range strings like '1.0-2.0' or '1 - 2'.
-_RANGE_REGEX = re.compile(r"\s*([0-9.]+)\s*-\s*([0-9.]+)\s*")
-# Regular expression to parse reference range threshold strings like '>=1.0' or
-# '< 2.0'.
-_THRESHOLD_REGEX = re.compile(r"\s*(<|>|<=|>=)\s*([0-9.]+)\s*")
 
 
 def _normalize_fhir_decimal(val_str: str) -> str | None:
@@ -332,52 +325,44 @@ def create_lab_observation(
       obs.value.string_value.value = str(lab_test.result)
 
   if lab_test.reference_range:
-    range_str = lab_test.reference_range[0]
-    if range_str:
+    for ref_range in lab_test.reference_range:
       rr = obs.reference_range.add()
-
-      range_str_without_unit = (
-          range_str.removesuffix(lab_test.unit)
-          if lab_test.unit
-          else range_str
-      )
-      # Range regex supports formats like '1.0-2.0' and '1 - 2'.
-      match = _RANGE_REGEX.fullmatch(range_str_without_unit)
-      if match:
-        low_val, high_val = match.groups()
-        norm_low = _normalize_fhir_decimal(low_val)
-        norm_high = _normalize_fhir_decimal(high_val)
-        if norm_low and norm_high:
+      if ref_range.low:
+        norm_low = _normalize_fhir_decimal(ref_range.low)
+        if norm_low:
           rr.low.value.value = norm_low
           rr.low.system.value = "http://unitsofmeasure.org"
-          rr.high.value.value = norm_high
-          rr.high.system.value = "http://unitsofmeasure.org"
           if lab_test.unit:
             rr.low.unit.value = lab_test.unit
             rr.low.code.value = lab_test.unit
+      if ref_range.high:
+        norm_high = _normalize_fhir_decimal(ref_range.high)
+        if norm_high:
+          rr.high.value.value = norm_high
+          rr.high.system.value = "http://unitsofmeasure.org"
+          if lab_test.unit:
             rr.high.unit.value = lab_test.unit
             rr.high.code.value = lab_test.unit
-      # Threshold regex supports formats like '>=1.0' or '< 2.0'.
-      match = _THRESHOLD_REGEX.fullmatch(range_str_without_unit)
-      if match:
-        operator, value = match.groups()
-        norm_val = _normalize_fhir_decimal(value)
-        if norm_val:
-          if operator == ">=" or operator == ">":
-            rr.low.value.value = norm_val
-            rr.low.system.value = "http://unitsofmeasure.org"
-            if lab_test.unit:
-              rr.low.unit.value = lab_test.unit
-              rr.low.code.value = lab_test.unit
-          elif operator == "<" or operator == "<=":
-            rr.high.value.value = norm_val
-            rr.high.system.value = "http://unitsofmeasure.org"
-            if lab_test.unit:
-              rr.high.unit.value = lab_test.unit
-              rr.high.code.value = lab_test.unit
-      # If no pattern matches for range, set the text value.
-      if not rr.low.value.value and not rr.high.value.value:
-        rr.text.value = range_str
+      if ref_range.applies_to:
+        applies_to_cb = rr.applies_to.add()
+        applies_to_cb.text.value = ref_range.applies_to.value
+      if ref_range.age:
+        if ref_range.age.low is not None:
+          norm_age_low = _normalize_fhir_decimal(str(ref_range.age.low))
+          if norm_age_low:
+            rr.age.low.value.value = norm_age_low
+            rr.age.low.system.value = "http://unitsofmeasure.org"
+            rr.age.low.unit.value = "a"
+            rr.age.low.code.value = "a"
+        if ref_range.age.high is not None:
+          norm_age_high = _normalize_fhir_decimal(str(ref_range.age.high))
+          if norm_age_high:
+            rr.age.high.value.value = norm_age_high
+            rr.age.high.system.value = "http://unitsofmeasure.org"
+            rr.age.high.unit.value = "a"
+            rr.age.high.code.value = "a"
+      if ref_range.text:
+        rr.text.value = ref_range.text
 
   return obs
 

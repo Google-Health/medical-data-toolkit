@@ -162,7 +162,7 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
           "Absolute Eosinophil Count",
           "00",
           "cells/mcL",
-          ["00-450"],
+          [resources.ReferenceRange(low="00", high="450", text="00-450")],
           "0",
           "0",
           "450",
@@ -173,7 +173,7 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
           "Glucose",
           "01.0",
           "mg/dL",
-          ["< 01"],
+          [resources.ReferenceRange(high="01", text="< 01")],
           "1.0",
           None,
           "1",
@@ -228,7 +228,7 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
         name="ESR",
         result="23",
         unit="mm",
-        reference_range=[reference_range_str],
+        reference_range=[resources.ReferenceRange(text=reference_range_str)],
     )
     obs_fhir = abdm_fhir_resource_converter.create_lab_observation(
         lab_test, "obs-id", "Patient/patient-id", None, None
@@ -253,6 +253,37 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
         lab_test, "obs-id", "Patient/patient-id", None, None
     )
     self.assertFalse(obs_fhir.HasField("value"))
+
+  def test_create_lab_observation_reference_range_fields(self):
+    lab_test = resources.LabTest(
+        core_analyte="HbA1c",
+        name="HbA1c",
+        result="5.5",
+        unit="%",
+        reference_range=[
+            resources.ReferenceRange(
+                low="4.5",
+                high="6.0",
+                applies_to=resources.ReferenceRangeAppliesTo.MALE,
+                age=resources.AgeRange(low=18.0, high=120.0),
+                text="Male 18+ 4.5-6.0",
+            )
+        ],
+    )
+    obs_fhir = abdm_fhir_resource_converter.create_lab_observation(
+        lab_test, "obs-id", "Patient/patient-id", None, None
+    )
+    self.assertLen(obs_fhir.reference_range, 1)
+    rr = obs_fhir.reference_range[0]
+    self.assertEqual(rr.low.value.value, "4.5")
+    self.assertEqual(rr.high.value.value, "6.0")
+    self.assertEqual(rr.text.value, "Male 18+ 4.5-6.0")
+    self.assertLen(rr.applies_to, 1)
+    self.assertEqual(rr.applies_to[0].text.value, "Male")
+    self.assertEqual(rr.age.low.value.value, "18.0")
+    self.assertEqual(rr.age.high.value.value, "120.0")
+    self.assertEqual(rr.age.low.unit.value, "a")
+    self.assertEqual(rr.age.high.unit.value, "a")
 
 
 if __name__ == "__main__":

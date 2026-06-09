@@ -411,6 +411,39 @@ class ModelClientTest(absltest.TestCase):
     self.assertEqual(response.thinking, "This is the thinking process.")
     self.assertEqual(response.parsed.reasoning, "final answer")
 
+  @mock.patch.object(litellm, "completion", autospec=True)
+  @mock.patch.object(model_client, "get_supported_openai_params", autospec=True)
+  def test_litellm_client_forwards_extra_body(
+      self, mock_get_params, mock_completion
+  ):
+    mock_get_params.return_value = []
+    client = model_client.LiteLLMClient(
+        model="openai/gemma",
+        config={
+            "extra_body": {
+                "mm_processor_kwargs": {"max_soft_tokens": 560}
+            }
+        }
+    )
+
+    mock_response = mock.Mock(spec=["choices"])
+    mock_choice = mock.Mock(spec=["message"])
+    mock_message = mock.Mock(spec=["content", "parsed"])
+    mock_message.content = "ok"
+    mock_message.parsed = None
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    client.generate_content(contents=["Hello"])
+
+    self.assertEqual(mock_completion.call_count, 1)
+    _, call_kwargs = mock_completion.call_args
+    self.assertEqual(
+        call_kwargs["extra_body"],
+        {"mm_processor_kwargs": {"max_soft_tokens": 560}}
+    )
+
   def test_parse_structured_response_with_post_process(self):
     def mock_post_process(data):
       if "res" in data:

@@ -20,6 +20,7 @@ and their synonyms.
 
 import ast
 import collections
+import logging
 import os
 import re
 from typing import Any, Iterable
@@ -68,7 +69,7 @@ class AnalytesIndex:
     if not _file_exists(csv_path):
       raise FileNotFoundError(f"File not found: {csv_path}")
 
-    print(f"Loading Index from {csv_path}...")
+    logging.info("Loading Index from %s...", csv_path)
     df = pandas.read_csv(csv_path)
 
     index = cls()
@@ -79,7 +80,7 @@ class AnalytesIndex:
       )
 
     index.load_data(df.to_dict("records"))
-    print(f"Loaded {len(index._signature_to_records_index)} terms.")
+    logging.info("Loaded %d terms.", len(index._signature_to_records_index))
     return index
 
   def load_data(self, records: Iterable[dict[str, Any]]):
@@ -95,11 +96,11 @@ class AnalytesIndex:
     records_with_core = self._harvest_synonyms(records)
     self._build_search_index(records_with_core)
 
-    print("✅ Indexing Complete.")
-    print(f"   - Loaded {len(records_with_core)} LOINC rows.")
-    print(
-        "   - Harmonized synonyms for"
-        f" {len(self._core_analyte_to_synonyms_map)} unique Core Analytes."
+    logging.info("✅ Indexing Complete.")
+    logging.info("   - Loaded %d LOINC rows.", len(records_with_core))
+    logging.info(
+        "   - Harmonized synonyms for %d unique Core Analytes.",
+        len(self._core_analyte_to_synonyms_map),
     )
 
   def search_by_analyte(self, analyte_name: str) -> list[schema.LoincRow]:
@@ -127,7 +128,7 @@ class AnalytesIndex:
     for record in records:
       core_analyte = record.get(config.CORE_ANALYTE_KEY)
       if not core_analyte or pandas.isna(core_analyte):
-        print(f"Core is empty: {record}")
+        logging.warning("Core is empty for record: %s", record)
         continue
 
       record[config.CORE_ANALYTE_KEY] = str(core_analyte)

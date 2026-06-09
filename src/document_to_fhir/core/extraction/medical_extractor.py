@@ -84,7 +84,6 @@ class MedicalExtractor(abc.ABC):
       clean_text = llm_util.extract_json_from_llm_response(response.text)
       return self.schema.model_validate_json(clean_text)
     except Exception as e:
+      logging.debug("Failed response text: %s", response.text)
       logging.exception("Failed to parse response")
-      raise ValueError(
-          f"Failed to parse LLM response: {response.text[:200]}..."
-      ) from e
+      raise ValueError("Failed to parse LLM response.") from e

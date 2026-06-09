@@ -298,6 +298,43 @@ class RestServerTest(absltest.TestCase):
       self.assertIs(standardizer, standardizer2)
       self.assertEqual(mock_standardizer_class.call_count, 1)
 
+  @unittest.mock.patch.dict(
+      'src.rest_server.os.environ',
+      {'LITELLM_API_KEY': 'fake_key'}
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.common.model_client.LiteLLMClient'
+  )
+  def test_create_llm_client_litellm_with_config(self, mock_litellm_client):
+    config = {
+        'type': 'LiteLLMClient',
+        'parameters': {
+            'model': 'openai/google/gemma-4-31B-it',
+            'api_key_env': 'LITELLM_API_KEY',
+            'api_base': 'http://localhost:8000/v1',
+            'config': {
+                'extra_body': {
+                    'mm_processor_kwargs': {'max_soft_tokens': 560}
+                }
+            }
+        }
+    }
+    rest_server._create_llm_client(config)
+    mock_litellm_client.assert_called_once_with(
+        model='openai/google/gemma-4-31B-it',
+        api_base='http://localhost:8000/v1',
+        api_key='fake_key',
+        temperature=0.0,
+        config={
+            'extra_body': {'mm_processor_kwargs': {'max_soft_tokens': 560}}
+        },
+        verbose=False,
+        timeout=300.0,
+        max_retries=3,
+        supports_pdf=False,
+        enable_thinking=False,
+    )
+
 
 if __name__ == '__main__':
   absltest.main()

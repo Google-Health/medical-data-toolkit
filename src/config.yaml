@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# Global logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+logging_level: "INFO"
+
 classifier_llm_client:
   type: "GeminiClient"
   parameters:
@@ -27,10 +30,14 @@ extractor_llm_client:
 # extractor_llm_client:
 #   type: "LiteLLMClient"
 #   parameters:
-#     model: "vllm/google/gemma-4-31B-it"
+#     model: "openai/google/gemma-4-31B-it"
 #     api_key_env: "LITELLM_API_KEY"
 #     api_base: "http://localhost:8000/v1"
 #     enable_thinking: true
+#     config:
+#       extra_body:
+#         mm_processor_kwargs:
+#           max_soft_tokens: 560
 
 supported_types:
   - "LABORATORY_REPORT"

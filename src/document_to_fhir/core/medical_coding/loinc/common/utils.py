@@ -15,6 +15,7 @@
 
 import collections
 import json
+import logging
 import re
 
 import pandas
@@ -96,5 +97,5 @@ def read_loinc_kb(
     ]
     if limit > 0 and len(df_loinc) > limit:
       df_loinc = df_loinc.head(limit)
-  print(f"Read {len(df_loinc)} LOINC rows.")
+  logging.info("Read %d LOINC rows.", len(df_loinc))
   return df_loinc

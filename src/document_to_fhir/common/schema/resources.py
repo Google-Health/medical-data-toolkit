@@ -18,6 +18,7 @@ documents, such as patients, practitioners, lab tests, and organizations.
 """
 
 import datetime
+import enum
 import logging
 from typing import Annotated, Any, Generic, Optional, TypeVar, Union, get_args, get_origin
 
@@ -136,6 +137,80 @@ class Patient(MedicalData):
   )
 
 
+class ReferenceRangeAppliesTo(str, enum.Enum):
+  MALE = 'Male'
+  FEMALE = 'Female'
+  PREGNANCY_CONFIRMED = 'Pregnancy confirmed'
+
+
+class AgeRange(MedicalData):
+  low: Optional[float] = pydantic.Field(
+      default=None, description='Lower limit of age (in years).'
+  )
+  high: Optional[float] = pydantic.Field(
+      default=None, description='Upper limit of age (in years).'
+  )
+
+
+class ReferenceRange(MedicalData):
+  """Represents a reference range for a lab test.
+
+  Create multiple ReferenceRange records ONLY if they apply to different
+  populations (e.g., different genders in applies_to, or different age ranges
+  in age). If there are multiple ranges/cues/interpretations for the same
+  population (even if they appear in different parts of the report, e.g., one in
+  the main table and others in comments), they MUST be clubbed into a single
+  ReferenceRange record. For this clubbed record, extract low/high from the
+  standard range, and concatenate all texts (standard range text and cues) in
+  the `text` field separated by semicolons.
+  """
+
+  low: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Lower limit if numeric. Applicable for standard non-conditional'
+          ' cases (e.g., "4.0" from "4.0-6.5", "5.0" from ">5") and for'
+          ' Gender/Age conditional cases only (e.g., "4.5" from "Male'
+          ' 4.5-6.0", "5.0" from "Adults >17 years 5-6"). Do NOT extract from'
+          ' clinical interpretation/risk-level cues (e.g., "Pre-diabetic:'
+          ' 5.7-6.4").'
+      ),
+  )
+  high: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Upper limit if numeric. Applicable for standard non-conditional'
+          ' cases (e.g., "6.5" from "4.0-6.5", "6.0" from "<=6") and for'
+          ' Gender/Age conditional cases only (e.g., "6.0" from "Male'
+          ' 4.5-6.0", "6.0" from "Adults >17 years 5-6"). Do NOT extract from'
+          ' clinical interpretation/risk-level cues (e.g., "Pre-diabetic:'
+          ' 5.7-6.4").'
+      ),
+  )
+  applies_to: Optional[ReferenceRangeAppliesTo] = pydantic.Field(
+      default=None,
+      description=(
+          'Reference range population gender or condition (e.g., Male, Female,'
+          ' Pregnancy confirmed).'
+      ),
+  )
+  age: Optional[AgeRange] = pydantic.Field(
+      default=None,
+      description='Applicable age range for this reference range (in years).',
+  )
+  text: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Contains all the reference range text, cues, and non-parseable'
+          ' info. If multiple risk-level ranges (e.g., Non-diabetic,'
+          ' Pre-diabetic, Diabetic) are clubbed, this field MUST contain the'
+          " concatenation of all those range texts separated by semicolon ';'"
+          ' (e.g., "Non-diabetic: <= 5.6; Pre-diabetic: 5.7-6.4; Diabetic: >='
+          ' 6.5").'
+      ),
+  )
+
+
 class LabTest(MedicalData):
   """Individual tests within a lab report."""
 
@@ -178,11 +253,12 @@ class LabTest(MedicalData):
           description='LOINC code of the lab panel if panel is present.',
       )
   )
-  reference_range: Optional[list[str]] = pydantic.Field(
+  reference_range: Optional[list[ReferenceRange]] = pydantic.Field(
       default=None,
       description=(
-          'Reference ranges of the lab test. This should be an array of string'
-          ' ranges (e.g., ["13.17 - 17 g/dL"])'
+          'List of reference ranges or clinical interpretation cues. Handles'
+          ' standard intervals (4-6.5), thresholds (<5.7, >=6.5), and textual'
+          ' categories (Prediabetes 5.7-6.4).'
       ),
   )
   loinc_code: Annotated[Optional[str], json_schema.SkipJsonSchema()] = (

@@ -18,6 +18,7 @@ standardized LOINC system categories.
 """
 
 
+import logging
 import pandas as pd
 
 
@@ -54,11 +55,11 @@ class SpecimenToSystemMapper:
           specimen_to_systems[synonym].add(canonical)
 
       else:
-        print(
-            f"Warning: CSV {csv_path} missing 'canonical' or 'synonym' columns."
+        logging.warning(
+            "CSV %s missing 'canonical' or 'synonym' columns.", csv_path
         )
     except FileNotFoundError:
-      print(f"Warning: System mapping file not found at {csv_path}.")
+      logging.warning("System mapping file not found at %s.", csv_path)
 
     return cls(specimen_to_systems)
 

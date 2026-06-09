@@ -27,6 +27,13 @@
         "unit": "g/dL",
         "loinc_code": "718-7",
         "loinc_common_name": "Hemoglobin [Mass/volume] in Blood",
+        "reference_range": [
+          {
+            "low": "12",
+            "high": "16",
+            "text": "12 - 16"
+          }
+        ],
         "panel_name": "CBC panel - Blood by Automated count",
         "panel_loinc_code": "58410-2"
       },
@@ -37,6 +44,13 @@
         "unit": "/uL",
         "loinc_code": "6690-2",
         "loinc_common_name": "Leukocytes [#/volume] in Blood by Automated count",
+        "reference_range": [
+          {
+            "low": "4000",
+            "high": "11000",
+            "text": "4000 - 11000"
+          }
+        ],
         "panel_name": "CBC panel - Blood by Automated count",
         "panel_loinc_code": "58410-2"
       },
@@ -46,7 +60,13 @@
         "result": "200",
         "unit": "mg/dL",
         "loinc_code": "2093-3",
-        "loinc_common_name": "Cholesterol [Mass/volume] in Serum or Plasma"
+        "loinc_common_name": "Cholesterol [Mass/volume] in Serum or Plasma",
+        "reference_range": [
+          {
+            "high": "200",
+            "text": "< 200"
+          }
+        ]
       }
     ],
     "sample_collection_time": "2026-02-01T10:00:00+00:00"
@@ -295,6 +315,23 @@
             "system": "http://unitsofmeasure.org",
             "code": "g/dL"
           },
+          "referenceRange": [
+            {
+              "low": {
+                "value": 12,
+                "unit": "g/dL",
+                "system": "http://unitsofmeasure.org",
+                "code": "g/dL"
+              },
+              "high": {
+                "value": 16,
+                "unit": "g/dL",
+                "system": "http://unitsofmeasure.org",
+                "code": "g/dL"
+              },
+              "text": "12 - 16"
+            }
+          ],
           "performer": [
             {
               "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
@@ -344,6 +381,23 @@
             "system": "http://unitsofmeasure.org",
             "code": "/uL"
           },
+          "referenceRange": [
+            {
+              "low": {
+                "value": 4000,
+                "unit": "/uL",
+                "system": "http://unitsofmeasure.org",
+                "code": "/uL"
+              },
+              "high": {
+                "value": 11000,
+                "unit": "/uL",
+                "system": "http://unitsofmeasure.org",
+                "code": "/uL"
+              },
+              "text": "4000 - 11000"
+            }
+          ],
           "performer": [
             {
               "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
@@ -393,6 +447,17 @@
             "system": "http://unitsofmeasure.org",
             "code": "mg/dL"
           },
+          "referenceRange": [
+            {
+              "high": {
+                "value": 200,
+                "unit": "mg/dL",
+                "system": "http://unitsofmeasure.org",
+                "code": "mg/dL"
+              },
+              "text": "< 200"
+            }
+          ],
           "performer": [
             {
               "reference": "urn:uuid:f1e83800-db7d-4dbb-8e2e-f1b8b34ffdf2"
