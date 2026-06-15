@@ -15,12 +15,12 @@
 
 import abc
 import base64
+import contextvars
 import copy
 import json
 import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Union
-
 from google import genai
 import google.auth
 import google.auth.transport.requests
@@ -30,6 +30,10 @@ from litellm import get_supported_openai_params
 import pydantic
 import requests
 import tenacity
+
+token_usage_var: contextvars.ContextVar[
+    Optional[List["LLMUsage"]]
+] = contextvars.ContextVar("token_usage", default=None)
 
 
 Request = google.auth.transport.requests.Request
@@ -127,8 +131,27 @@ class GenAIClientBase(LLMClient):
     if schema:
       merged_config["response_schema"] = schema
 
-    return self.client.models.generate_content(
+    raw_response = self.client.models.generate_content(
         model=self.model, contents=contents, config=merged_config
+    )
+
+    usage = None
+    if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
+      usage = LLMUsage(
+          prompt_tokens=raw_response.usage_metadata.prompt_token_count,
+          completion_tokens=raw_response.usage_metadata.candidates_token_count,
+          total_tokens=raw_response.usage_metadata.total_token_count,
+      )
+
+    if usage:
+      usage_list = token_usage_var.get()
+      if usage_list is not None:
+        usage_list.append(usage)
+
+    return MockResponse(
+        text=raw_response.text,
+        parsed=raw_response.parsed,
+        usage=usage,
     )
 
 
@@ -148,20 +171,34 @@ class GemmaClient(GenAIClientBase):
     return False
 
 
-class MockResponse:
-  """A mock response class to mimic genai response structure."""
+class LLMUsage(pydantic.BaseModel):
+  prompt_tokens: int
+  completion_tokens: int
+  total_tokens: int
 
-  def __init__(self, text, parsed=None, thinking=None):
+
+class MockResponse:
+  """A response class to mimic genai response structure and hold metadata."""
+
+  def __init__(
+      self,
+      text: str,
+      parsed: Any = None,
+      thinking: Optional[str] = None,
+      usage: Optional[LLMUsage] = None,
+  ):
     """Initializes the MockResponse.
 
     Args:
       text: The raw text response from the model.
       parsed: The parsed object from the response, often a Pydantic model.
       thinking: Optional, the extracted thinking process if available.
+      usage: Optional, the token usage metadata.
     """
     self.text = text
     self.parsed = parsed
     self.thinking = thinking
+    self.usage = usage
 
 
 def _clean_and_extract_json_string(text_response: str) -> str:
@@ -358,7 +395,7 @@ class LiteLLMClient(LLMClient):
     # Always inject the schema to the prompt to provide semantic context.
     if schema:
       if hasattr(schema, "model_json_schema"):
-        schema_json = json.dumps(schema.model_json_schema(), indent=2)
+        schema_json = json.dumps(schema.model_json_schema())
         schema_prompt = (
             "\n\nIMPORTANT: The response must be a valid JSON object matching"
             f" the following JSON schema:\n{schema_json}"
@@ -533,8 +570,24 @@ class LiteLLMClient(LLMClient):
               text_response, schema, post_process
           )
 
+      usage = None
+      if hasattr(response, "usage") and response.usage:
+        usage = LLMUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
+        )
+
+      if usage:
+        usage_list = token_usage_var.get()
+        if usage_list is not None:
+          usage_list.append(usage)
+
       return MockResponse(
-          text=text_response, parsed=parsed_obj, thinking=thinking_process
+          text=text_response,
+          parsed=parsed_obj,
+          thinking=thinking_process,
+          usage=usage,
       )
 
     def _custom_wait(retry_state):

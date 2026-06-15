@@ -41,7 +41,7 @@
 #      *are* extracted.
 
 import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
 import pydantic
 
@@ -55,10 +55,29 @@ class MedicalDocument(resources.MedicalData):
   """
 
 
+def _serialize_datetime_to_isoformat(
+    dt: Optional[datetime.datetime],
+) -> Optional[str]:
+  if dt is None:
+    return None
+  # Ensure the datetime is in UTC.
+  if dt.tzinfo is not None:
+    dt = dt.astimezone(datetime.timezone.utc)
+  else:
+    dt = dt.replace(tzinfo=datetime.timezone.utc)
+  return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
+CustomDateTime = Annotated[
+    datetime.datetime,
+    pydantic.PlainSerializer(_serialize_datetime_to_isoformat, return_type=str),
+]
+
+
 class LabReport(MedicalDocument):
   """Medical Laboratory Report for a patient."""
 
-  sample_collection_time: Optional[datetime.datetime] = pydantic.Field(
+  sample_collection_time: Optional[CustomDateTime] = pydantic.Field(
       default=None, description='Sample collection time of the lab report.'
   )
   patient: resources.Patient = pydantic.Field(description='Patient details.')

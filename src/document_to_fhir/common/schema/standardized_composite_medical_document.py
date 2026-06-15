@@ -24,6 +24,13 @@ from src.document_to_fhir.common.schema import medical_documents
 
 class DocumentSegment(pydantic.BaseModel):
   reasoning: str = pydantic.Field(description="Reasoning for the prediction.")
+  handwritten_content_percent: int = pydantic.Field(
+      default=0,
+      description=(
+          "Percentage of handwritten content in the document segment in the"
+          " range 0-100%."
+      ),
+  )
   document_type: document_types.MedicalDocumentType = pydantic.Field(
       description="Predicted document type."
   )
@@ -94,6 +101,11 @@ class StandardizedMedicalDocumentWithContext(pydantic.BaseModel):
     return data
 
 
+class PipelineMetadata(pydantic.BaseModel):
+  latency_ms: dict[str, Any]
+  token_usage: Optional[dict[str, Any]] = None
+
+
 class StandardizedCompositeMedicalDocumentWithContext(pydantic.BaseModel):
   """A collection of StandardizedMedicalDocumentWithContext objects.
 
@@ -106,6 +118,7 @@ class StandardizedCompositeMedicalDocumentWithContext(pydantic.BaseModel):
   standardized_medical_documents: list[
       StandardizedMedicalDocumentWithContext
   ] = pydantic.Field(default_factory=list)
+  metadata: Optional[PipelineMetadata] = None
   lock: threading.Lock = pydantic.Field(
       default_factory=threading.Lock, exclude=True
   )

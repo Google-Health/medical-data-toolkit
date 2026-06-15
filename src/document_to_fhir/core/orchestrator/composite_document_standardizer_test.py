@@ -16,6 +16,8 @@ from unittest import mock
 
 from absl.testing import absltest
 
+from src.document_to_fhir.common.model_client import LLMUsage
+from src.document_to_fhir.common.model_client import token_usage_var
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.core.orchestrator import composite_document_standardizer
 
@@ -25,6 +27,9 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
   def setUp(self):
     super().setUp()
     self.mock_classifier = mock.Mock()
+    self.mock_classifier.process_handwritten_medical_pages.side_effect = (
+        lambda x: x
+    )
     self.mock_standardizer = mock.Mock()
     self.standardizers = {
         document_types.MedicalDocumentType.LABORATORY_REPORT: (
@@ -291,6 +296,77 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.assertEqual(result.n_documents, 1)
     doc = result.standardized_medical_documents[0]
     self.assertEqual(doc.fhir_bundle, updated_bundle)
+
+  @mock.patch(
+      "src.document_to_fhir.core.orchestrator.composite_document_standardizer.json_format.print_fhir_to_json_string"
+  )
+  @mock.patch(
+      "src.document_to_fhir.common.pdf_util.convert_pdf_pages_to_png_images"
+  )
+  def test_standardize_returns_metadata(
+      self, mock_convert, mock_print_fhir
+  ):
+    mock_convert.return_value = [b"page1", b"page2"]
+    mock_print_fhir.return_value = "{}"
+
+    # Mock classifier
+    mock_segment = mock.Mock()
+    mock_segment.document_type = (
+        document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_segment.start_page = 1
+    mock_segment.end_page = 2
+    mock_doc = mock.Mock()
+    mock_doc.segments = [mock_segment]
+
+    def mock_classify(*unused_args, **unused_kwargs):
+      # Simulate classification token usage
+      usage_list = token_usage_var.get()
+      if usage_list is not None:
+        usage_list.append(
+            LLMUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+        )
+      return mock_doc
+
+    self.mock_classifier.classify.side_effect = mock_classify
+
+    # Mock standardizer
+    def mock_standardize(*unused_args, **unused_kwargs):
+      # Simulate standardization token usage
+      usage_list = token_usage_var.get()
+      if usage_list is not None:
+        usage_list.append(
+            LLMUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30)
+        )
+      return mock.Mock(), mock.Mock()
+
+    self.mock_standardizer.standardize.side_effect = mock_standardize
+
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+            return_metadata=True,
+        )
+    )
+
+    result = standardizer.standardize(b"fake_pdf_content")
+
+    self.assertIsNotNone(result.metadata)
+    assert result.metadata is not None
+    self.assertIn("total", result.metadata.latency_ms)
+    self.assertIn("classification", result.metadata.latency_ms)
+    self.assertIn("standardization", result.metadata.latency_ms)
+    self.assertLen(result.metadata.latency_ms["standardization"]["segments"], 1)
+
+    # Verify tokens
+    self.assertEqual(
+        result.metadata.token_usage["classification"]["total_tokens"], 15
+    )
+    self.assertEqual(
+        result.metadata.token_usage["standardization"]["total_tokens"], 30
+    )
+    self.assertEqual(result.metadata.token_usage["total"]["total_tokens"], 45)
 
 
 if __name__ == "__main__":

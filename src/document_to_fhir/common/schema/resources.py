@@ -20,7 +20,8 @@ documents, such as patients, practitioners, lab tests, and organizations.
 import datetime
 import enum
 import logging
-from typing import Annotated, Any, Generic, Optional, TypeVar, Union, get_args, get_origin
+import typing
+from typing import Annotated, Any, Generic, Optional, TypeVar, Union
 
 import pydantic
 from pydantic import json_schema
@@ -45,13 +46,17 @@ class MedicalData(pydantic.BaseModel):
       annotation = field_info.annotation
       # Check if field's annotation is Optional[datetime.datetime] or
       # Optional[datetime.date]
-      if get_origin(annotation) is Union:
-        args = get_args(annotation)
+      if typing.get_origin(annotation) is Union:
+        args = typing.get_args(annotation)
         # Optional[T] is Union[T, NoneType]
         if type(None) in args:
           target_type = next(
               (a for a in args if not isinstance(a, type(None))), None
           )
+          # Handle Annotated[datetime.datetime, ...] or
+          # Annotated[datetime.date, ...]
+          if typing.get_origin(target_type) is Annotated:
+            target_type = typing.get_args(target_type)[0]
           if target_type in (datetime.datetime, datetime.date):
             value = data.get(field_name)
             if value and isinstance(value, str):
@@ -153,17 +158,7 @@ class AgeRange(MedicalData):
 
 
 class ReferenceRange(MedicalData):
-  """Represents a reference range for a lab test.
-
-  Create multiple ReferenceRange records ONLY if they apply to different
-  populations (e.g., different genders in applies_to, or different age ranges
-  in age). If there are multiple ranges/cues/interpretations for the same
-  population (even if they appear in different parts of the report, e.g., one in
-  the main table and others in comments), they MUST be clubbed into a single
-  ReferenceRange record. For this clubbed record, extract low/high from the
-  standard range, and concatenate all texts (standard range text and cues) in
-  the `text` field separated by semicolons.
-  """
+  """Represents a reference range for a lab test."""
 
   low: Optional[str] = pydantic.Field(
       default=None,
@@ -187,26 +182,17 @@ class ReferenceRange(MedicalData):
           ' 5.7-6.4").'
       ),
   )
-  applies_to: Optional[ReferenceRangeAppliesTo] = pydantic.Field(
-      default=None,
-      description=(
-          'Reference range population gender or condition (e.g., Male, Female,'
-          ' Pregnancy confirmed).'
-      ),
-  )
-  age: Optional[AgeRange] = pydantic.Field(
-      default=None,
-      description='Applicable age range for this reference range (in years).',
-  )
   text: Optional[str] = pydantic.Field(
       default=None,
       description=(
           'Contains all the reference range text, cues, and non-parseable'
           ' info. If multiple risk-level ranges (e.g., Non-diabetic,'
-          ' Pre-diabetic, Diabetic) are clubbed, this field MUST contain the'
-          " concatenation of all those range texts separated by semicolon ';'"
-          ' (e.g., "Non-diabetic: <= 5.6; Pre-diabetic: 5.7-6.4; Diabetic: >='
-          ' 6.5").'
+          ' Pre-diabetic, Diabetic) are present, even if they appear in'
+          ' different parts of the report, e.g., one in the main table and'
+          ' others in comments, they MUST be clubbed. Concatenate all texts'
+          ' (standard range text and cues) separated by semicolon ";"'
+          ' (e.g., "4 - 6.5; Non-diabetic: <= 5.6; Pre-diabetic: 5.7-6.4;'
+          '  Diabetic: >= 6.5").'
       ),
   )
 

@@ -23,3 +23,7 @@ Use these clinical nuances to distinguish between similar document types:
 1. Every page of the document must be accounted for in your output. Note that the start and end pages need to be the same if the document has a single page.
 2. There must be absolutely **zero** overlap or page repetition between different predicted segments. Page ranges must be strictly sequential and mutually exclusive.
 3. The "reasoning" should briefly mention the specific "anchor phrases" or structural elements used to identify the document, and justification of the predicted page range using header, patient name, date etc.
+
+Guidelines:
+1. Ensure the output JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.
+2. Always close all opened braces (e.g., `}`, `]`) correctly.

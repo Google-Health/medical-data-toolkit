@@ -264,8 +264,6 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
             resources.ReferenceRange(
                 low="4.5",
                 high="6.0",
-                applies_to=resources.ReferenceRangeAppliesTo.MALE,
-                age=resources.AgeRange(low=18.0, high=120.0),
                 text="Male 18+ 4.5-6.0",
             )
         ],
@@ -278,12 +276,6 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
     self.assertEqual(rr.low.value.value, "4.5")
     self.assertEqual(rr.high.value.value, "6.0")
     self.assertEqual(rr.text.value, "Male 18+ 4.5-6.0")
-    self.assertLen(rr.applies_to, 1)
-    self.assertEqual(rr.applies_to[0].text.value, "Male")
-    self.assertEqual(rr.age.low.value.value, "18.0")
-    self.assertEqual(rr.age.high.value.value, "120.0")
-    self.assertEqual(rr.age.low.unit.value, "a")
-    self.assertEqual(rr.age.high.unit.value, "a")
 
 
 if __name__ == "__main__":

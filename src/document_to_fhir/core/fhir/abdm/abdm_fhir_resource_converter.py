@@ -343,24 +343,6 @@ def create_lab_observation(
           if lab_test.unit:
             rr.high.unit.value = lab_test.unit
             rr.high.code.value = lab_test.unit
-      if ref_range.applies_to:
-        applies_to_cb = rr.applies_to.add()
-        applies_to_cb.text.value = ref_range.applies_to.value
-      if ref_range.age:
-        if ref_range.age.low is not None:
-          norm_age_low = _normalize_fhir_decimal(str(ref_range.age.low))
-          if norm_age_low:
-            rr.age.low.value.value = norm_age_low
-            rr.age.low.system.value = "http://unitsofmeasure.org"
-            rr.age.low.unit.value = "a"
-            rr.age.low.code.value = "a"
-        if ref_range.age.high is not None:
-          norm_age_high = _normalize_fhir_decimal(str(ref_range.age.high))
-          if norm_age_high:
-            rr.age.high.value.value = norm_age_high
-            rr.age.high.system.value = "http://unitsofmeasure.org"
-            rr.age.high.unit.value = "a"
-            rr.age.high.code.value = "a"
       if ref_range.text:
         rr.text.value = ref_range.text
 

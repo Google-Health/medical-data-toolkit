@@ -401,5 +401,78 @@ class ClassifierTest(absltest.TestCase):
     ]
     self.assertEqual(sorted_doc.segments, expected_segments)
 
+  def test_process_handwritten_medical_pages(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    doc = standardized_composite_medical_document.CompositeDocument(
+        segments=[
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+                start_page=1,
+                end_page=2,
+                reasoning="",
+                handwritten_content_percent=80,
+            ),
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.LABORATORY_REPORT,
+                start_page=3,
+                end_page=4,
+                reasoning="",
+                handwritten_content_percent=50,
+            ),
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.NON_MEDICAL,
+                start_page=5,
+                end_page=6,
+                reasoning="",
+                handwritten_content_percent=90,
+            ),
+        ]
+    )
+
+    actual = c.process_handwritten_medical_pages(
+        doc, handwritten_percent_threshold=70
+    )
+
+    expected_types = [
+        document_types.MedicalDocumentType.HANDWRITTEN,
+        document_types.MedicalDocumentType.LABORATORY_REPORT,
+        document_types.MedicalDocumentType.NON_MEDICAL,
+    ]
+    actual_types = [seg.document_type for seg in actual.segments]
+
+    self.assertEqual(expected_types, actual_types)
+
+  def test_process_handwritten_medical_pages_default_threshold(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    doc = standardized_composite_medical_document.CompositeDocument(
+        segments=[
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.PRESCRIPTION,
+                start_page=1,
+                end_page=2,
+                reasoning="",
+                handwritten_content_percent=35,
+            ),
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.LABORATORY_REPORT,
+                start_page=3,
+                end_page=4,
+                reasoning="",
+                handwritten_content_percent=30,
+            ),
+        ]
+    )
+
+    actual = c.process_handwritten_medical_pages(doc)
+
+    expected_types = [
+        document_types.MedicalDocumentType.HANDWRITTEN,
+        document_types.MedicalDocumentType.LABORATORY_REPORT,
+    ]
+    actual_types = [seg.document_type for seg in actual.segments]
+
+    self.assertEqual(expected_types, actual_types)
+
+
 if __name__ == "__main__":
   absltest.main()

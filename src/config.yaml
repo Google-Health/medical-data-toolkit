@@ -39,6 +39,9 @@ extractor_llm_client:
 #         mm_processor_kwargs:
 #           max_soft_tokens: 560
 
+# Maximum number of pages supported in an uploaded PDF document.
+max_pdf_pages: 40
+
 supported_types:
   - "LABORATORY_REPORT"
 
@@ -53,6 +56,9 @@ document_standardization_policy: ACCEPT_ALL
 # NOTE: Avoid enabling this if the uploaded document contains data for multiple
 # patients, as it will link the entire document to only the first identified patient.
 ATTACH_DOCUMENT_TO_BUNDLE: false
+
+# When true, returns detailed pipeline metadata (latencies, tokens) in the response.
+RETURN_METADATA: false
 
 # Paths to the CSV files containing LOINC Knowledge Base data.
 # These files are required for terminology mapping (e.g. mapping lab tests to LOINC codes).

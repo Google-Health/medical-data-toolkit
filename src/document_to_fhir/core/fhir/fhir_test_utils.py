@@ -16,7 +16,6 @@
 from typing import Any
 
 from absl.testing import absltest
-
 from google.protobuf import message
 
 

@@ -16,12 +16,13 @@
 import base64
 from collections.abc import Mapping
 import concurrent.futures
-import functools
 import json
 import logging
+import time
 
 from google.fhir.r4 import json_format
 from src.document_to_fhir.common import pdf_util
+from src.document_to_fhir.common.model_client import token_usage_var
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 from src.document_to_fhir.core.classification import classifier as classifier_lib
@@ -31,6 +32,7 @@ from src.document_to_fhir.core.orchestrator import medical_document_standardizer
 
 # Standard DPI for PDF to Image conversion
 TARGET_PDF_TO_IMAGE_DPI = 300
+_MS_PER_SECOND = 1000
 
 
 class CompositeDocumentStandardizer:
@@ -45,63 +47,65 @@ class CompositeDocumentStandardizer:
       ],
       document_standardization_policy: document_types.DocumentStandardizationPolicy = document_types.DocumentStandardizationPolicy.ACCEPT_ALL,
       attach_document_to_bundle: bool = False,
+      return_metadata: bool = False,
   ):
     self.classifier = classifier
     self.document_standardizers = standardizers
     self.document_standardization_policy = document_standardization_policy
     self.attach_document_to_bundle = attach_document_to_bundle
+    self.return_metadata = return_metadata
 
-  def _process_segment(self, all_pages, total_pages, mime_type, segment):
+  def _process_segment(self, segment_images, mime_type, segment):
     """Processes a single document segment.
 
-    This method takes a segment identified by the classifier, extracts the
-    relevant pages from the full set of source images, and standardizes the
-    segment using the appropriate document standardizer based on its type.
+    This method takes a segment identified by the classifier, and standardizes
+    the segment using the appropriate document standardizer based on its type.
 
     Args:
-      all_pages: A list of images for all pages of the document.
-      total_pages: The total number of pages in the document.
+      segment_images: A list of images for the pages of this segment.
       mime_type: The mime type of the images being processed.
       segment: The document segment object containing type and page range.
 
     Returns:
-      A StandardizedMedicalDocumentWithContext if standardization is successful,
-      or None if the segment is invalid or an error occurs.
+      A tuple containing:
+        - StandardizedMedicalDocumentWithContext or None if skipped.
+        - Latency in milliseconds.
+        - List of LLMUsage objects.
     """
-    # Range Validation
-    if not (1 <= segment.start_page <= segment.end_page <= total_pages):
-      logging.warning("Skipping %s: Invalid page range.", segment.document_type)
-      return None
+    start_time = time.perf_counter()
+    segment_usages = []
+    token = token_usage_var.set(segment_usages)
+    try:
+      document_type = segment.document_type
 
-    # Slice images for this segment
-    segment_images = all_pages[segment.start_page - 1 : segment.end_page]
-    document_type = segment.document_type
+      standardizer = self.document_standardizers.get(document_type)
 
-    standardizer = self.document_standardizers.get(document_type)
+      medical_document, fhir_bundle = None, None
 
-    medical_document, fhir_bundle = None, None
+      if standardizer:
+        medical_document, fhir_bundle = standardizer.standardize(
+            segment_images, mime_type=mime_type
+        )
+      else:
+        logging.warning("No standardizer for %s. Skipping.", document_type)
 
-    if standardizer:
-      medical_document, fhir_bundle = standardizer.standardize(
-          segment_images, mime_type=mime_type
+      # Wrap in our Pydantic segment model
+      fhir_json = (
+          json.loads(json_format.print_fhir_to_json_string(fhir_bundle))
+          if fhir_bundle
+          else None
       )
-    else:
-      logging.warning("No standardizer for %s. Skipping.", document_type)
-
-    # Wrap in our Pydantic segment model
-    fhir_json = (
-        json.loads(json_format.print_fhir_to_json_string(fhir_bundle))
-        if fhir_bundle
-        else None
-    )
-    standardized_document = standardized_composite_medical_document.StandardizedMedicalDocumentWithContext(
-        document_type=document_type,
-        start_page=segment.start_page,
-        end_page=segment.end_page,
-        medical_document=medical_document,
-        fhir_bundle=fhir_json,
-    )
-    return standardized_document
+      standardized_document = standardized_composite_medical_document.StandardizedMedicalDocumentWithContext(
+          document_type=document_type,
+          start_page=segment.start_page,
+          end_page=segment.end_page,
+          medical_document=medical_document,
+          fhir_bundle=fhir_json,
+      )
+      latency_ms = (time.perf_counter() - start_time) * _MS_PER_SECOND
+      return standardized_document, latency_ms, segment_usages
+    finally:
+      token_usage_var.reset(token)
 
   def _partition_segments(
       self,
@@ -161,7 +165,9 @@ class CompositeDocumentStandardizer:
     return segments_to_process, segments_to_pass_through
 
   def standardize(
-      self, data: bytes, mime_type: str = "application/pdf"
+      self,
+      data: bytes,
+      mime_type: str = "application/pdf",
   ) -> (
       standardized_composite_medical_document.StandardizedCompositeMedicalDocumentWithContext
   ):
@@ -179,6 +185,9 @@ class CompositeDocumentStandardizer:
       standardized medical documents for each segment, or an empty composite
       document if classification fails.
     """
+    start_total = time.perf_counter()
+    latencies = {}
+    token_usages = {}
 
     if not (mime_type == "application/pdf" or mime_type.startswith("image/")):
       raise ValueError(
@@ -187,9 +196,35 @@ class CompositeDocumentStandardizer:
       )
 
     # 1. Classification
-    composite_doc = self.classifier.classify(
-        data, temperature=0, mime_type=mime_type
+    start_classify = time.perf_counter()
+    usages_classify = []
+    token = token_usage_var.set(usages_classify)
+    try:
+      composite_doc = self.classifier.classify(
+          data, temperature=0, mime_type=mime_type
+      )
+      composite_doc = self.classifier.process_handwritten_medical_pages(
+          composite_doc
+      )
+    finally:
+      token_usage_var.reset(token)
+
+    latencies["classification"] = (
+        time.perf_counter() - start_classify
+    ) * _MS_PER_SECOND
+
+    # Extract classification tokens
+    classify_prompt_tokens = sum(u.prompt_tokens for u in usages_classify)
+    classify_completion_tokens = sum(
+        u.completion_tokens for u in usages_classify
     )
+    classify_total_tokens = sum(u.total_tokens for u in usages_classify)
+
+    token_usages["classification"] = {
+        "prompt_tokens": classify_prompt_tokens,
+        "completion_tokens": classify_completion_tokens,
+        "total_tokens": classify_total_tokens,
+    }
 
     segments_to_process, segments_to_pass_through = self._partition_segments(
         composite_doc.segments
@@ -214,9 +249,18 @@ class CompositeDocumentStandardizer:
           "Passing through segments: %s",
           segments_to_pass_through,
       )
+      latencies["total"] = (time.perf_counter() - start_total) * _MS_PER_SECOND
+      if self.return_metadata:
+        standardized_composite_document.metadata = (
+            standardized_composite_medical_document.PipelineMetadata(
+                latency_ms=latencies,
+                token_usage=token_usages,
+            )
+        )
       return standardized_composite_document
 
     # 2. Input Pre-processing
+    start_preprocess = time.perf_counter()
     if mime_type == "application/pdf":
       all_pages = pdf_util.convert_pdf_pages_to_png_images(
           data, TARGET_PDF_TO_IMAGE_DPI
@@ -228,23 +272,68 @@ class CompositeDocumentStandardizer:
       working_mime_type = mime_type
 
     total_pages = len(all_pages)
+    latencies["pre_processing"] = (
+        time.perf_counter() - start_preprocess
+    ) * _MS_PER_SECOND
 
     # 3. Segment Loop (Parallelized)
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=min(len(segments_to_process), 3)
-    ) as executor:
-      standardized_documents = executor.map(
-          functools.partial(
-              self._process_segment, all_pages, total_pages, working_mime_type
-          ),
-          segments_to_process,
-      )
+    start_standardize = time.perf_counter()
+    segment_latencies = []
+    usages_standardize = []
 
-      for standardized_document in standardized_documents:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=len(segments_to_process)
+    ) as executor:
+      futures = []
+      for segment in segments_to_process:
+        # Range Validation
+        if not (1 <= segment.start_page <= segment.end_page <= total_pages):
+          logging.warning(
+              "Skipping %s: Invalid page range.", segment.document_type
+          )
+          continue
+
+        segment_images = all_pages[segment.start_page - 1 : segment.end_page]
+        futures.append(
+            executor.submit(
+                self._process_segment,
+                segment_images,
+                working_mime_type,
+                segment,
+            )
+        )
+
+      for future in concurrent.futures.as_completed(futures):
+        standardized_document, segment_latency, segment_usages = future.result()
         if standardized_document:
           standardized_composite_document.add_standardized_document(
               standardized_document
           )
+          segment_latencies.append({
+              "document_type": standardized_document.document_type,
+              "latency_ms": segment_latency,
+              "start_page": standardized_document.start_page,
+              "end_page": standardized_document.end_page,
+          })
+          usages_standardize.extend(segment_usages)
+
+    latencies["standardization"] = {
+        "total": (time.perf_counter() - start_standardize) * _MS_PER_SECOND,
+        "segments": segment_latencies,
+    }
+
+    # Extract standardization tokens
+    standardize_prompt_tokens = sum(u.prompt_tokens for u in usages_standardize)
+    standardize_completion_tokens = sum(
+        u.completion_tokens for u in usages_standardize
+    )
+    standardize_total_tokens = sum(u.total_tokens for u in usages_standardize)
+
+    token_usages["standardization"] = {
+        "prompt_tokens": standardize_prompt_tokens,
+        "completion_tokens": standardize_completion_tokens,
+        "total_tokens": standardize_total_tokens,
+    }
 
     standardized_composite_document.sort_documents_by_page_number()
 
@@ -266,5 +355,44 @@ class CompositeDocumentStandardizer:
             if modified:
               doc.fhir_bundle = updated_bundle
               break
+
+    # Calculate total latency
+    latencies["total"] = (time.perf_counter() - start_total) * _MS_PER_SECOND
+
+    # Calculate total tokens
+    total_prompt_tokens = classify_prompt_tokens + standardize_prompt_tokens
+    total_completion_tokens = (
+        classify_completion_tokens + standardize_completion_tokens
+    )
+    total_total_tokens = classify_total_tokens + standardize_total_tokens
+
+    token_usages["total"] = {
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "total_tokens": total_total_tokens,
+    }
+
+    if self.return_metadata:
+      standardized_composite_document.metadata = (
+          standardized_composite_medical_document.PipelineMetadata(
+              latency_ms=latencies,
+              token_usage=token_usages,
+          )
+      )
+
+    # Always log metrics for production visibility
+    logging.info(
+        (
+            "MDDAS Pipeline Metrics: Total Latency: %.2fms (Classify: %.2fms,"
+            " Standardize: %.2fms). Tokens: Total %d (Classify: %d,"
+            " Standardize: %d)."
+        ),
+        latencies["total"],
+        latencies["classification"],
+        latencies["standardization"]["total"],
+        total_total_tokens,
+        classify_total_tokens,
+        standardize_total_tokens,
+    )
 
     return standardized_composite_document

@@ -23,6 +23,7 @@ from google.genai import types
 from src.document_to_fhir.common import llm_util
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common import pdf_util
+from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 
 
@@ -73,6 +74,15 @@ class DocumentClassifierBase(abc.ABC):
       **kwargs,
   ) -> standardized_composite_medical_document.CompositeDocument:
     """Classifies a medical document."""
+    pass
+
+  @abc.abstractmethod
+  def process_handwritten_medical_pages(
+      self,
+      composite_doc: standardized_composite_medical_document.CompositeDocument,
+      **kwargs,
+  ) -> standardized_composite_medical_document.CompositeDocument:
+    """Marks segments as handwritten if they meet the threshold."""
     pass
 
   def _chunk_pdf_to_parts(
@@ -156,9 +166,7 @@ class DocumentClassifierBase(abc.ABC):
           mime_type if mime_type.startswith("image/") else "image/png"
       )
 
-      request_contents = [
-          types.Part.from_text(text="==Start of Document==\n")
-      ]
+      request_contents = [types.Part.from_text(text="==Start of Document==\n")]
       for i, img in enumerate(images):
         request_contents.append(
             types.Part.from_text(text=f"==Screenshot for page {i + 1}==\n")
@@ -262,9 +270,9 @@ class MultiDocumentClassifier(DocumentClassifierBase):
         )
       else:
         # Case 3: Bridge the page boundary gap between segments
-        merged_classified_output[-1].end_page = classification_outputs[
-            index
-        ].segments[0].end_page
+        merged_classified_output[-1].end_page = (
+            classification_outputs[index].segments[0].end_page
+        )
         merged_classified_output.extend(
             classification_outputs[index].segments[1:]
         )
@@ -272,6 +280,32 @@ class MultiDocumentClassifier(DocumentClassifierBase):
     return standardized_composite_medical_document.CompositeDocument(
         segments=merged_classified_output
     )
+
+  def process_handwritten_medical_pages(
+      self,
+      composite_doc: standardized_composite_medical_document.CompositeDocument,
+      handwritten_percent_threshold: int = 33,
+  ) -> standardized_composite_medical_document.CompositeDocument:
+    """Marks document segments as handwritten if they meet the threshold.
+
+    If a segment's handwritten content percentage is above the threshold and
+    it is a medical document, its type is set to HANDWRITTEN.
+
+    Args:
+      composite_doc: The composite document containing segments to process.
+      handwritten_percent_threshold: Percent threshold for handwritten content.
+
+    Returns:
+      The processed composite document with updated segment document types.
+    """
+    for segment in composite_doc.segments:
+      if (
+          segment.handwritten_content_percent > handwritten_percent_threshold
+          and segment.document_type
+          != document_types.MedicalDocumentType.NON_MEDICAL
+      ):
+        segment.document_type = document_types.MedicalDocumentType.HANDWRITTEN
+    return composite_doc
 
   def classify(
       self,

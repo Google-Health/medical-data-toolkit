@@ -30,6 +30,15 @@ class RestServerTest(absltest.TestCase):
     rest_server.flask_app.testing = True
     self.client = rest_server.flask_app.test_client()
     rest_server._composite_standardizer = None
+    self.max_pages_patcher = unittest.mock.patch(
+        'src.rest_server._get_max_pdf_pages',
+        return_value=40,
+    )
+    self.max_pages_patcher.start()
+
+  def tearDown(self):
+    super().tearDown()
+    self.max_pages_patcher.stop()
 
   def test_healthcheck(self):
     response = self.client.get('/')
@@ -290,6 +299,7 @@ class RestServerTest(absltest.TestCase):
           standardizers=unittest.mock.ANY,
           document_standardization_policy=rest_server.document_types.DocumentStandardizationPolicy.ALLOW_ONLY_SUPPORTED,
           attach_document_to_bundle=False,
+          return_metadata=False,
       )
       self.assertIsNotNone(standardizer)
       self.assertEqual(standardizer, mock_standardizer_class.return_value)
@@ -334,6 +344,92 @@ class RestServerTest(absltest.TestCase):
         supports_pdf=False,
         enable_thinking=False,
     )
+
+  def test_pdf_generation_for_page_limit(self):
+    max_pages = 40
+    with io.BytesIO() as out_buffer:
+      pdf = pypdfium2.PdfDocument.new()
+      for _ in range(max_pages + 1):
+        pdf.new_page(612, 792)
+      pdf.save(out_buffer)
+      pdf_bytes = out_buffer.getvalue()
+
+    actual_count = rest_server._pdf_page_count(pdf_bytes)
+    self.assertEqual(actual_count, max_pages + 1)
+
+  def test_document_to_fhir_pdf_too_many_pages(self):
+    max_pages = 40
+    # Create a PDF with 41 pages using pypdfium2
+    with io.BytesIO() as out_buffer:
+      pdf = pypdfium2.PdfDocument.new()
+      for _ in range(max_pages + 1):
+        pdf.new_page(612, 792)
+      pdf.save(out_buffer)
+      pdf_bytes = out_buffer.getvalue()
+
+    response = self.client.post('/document_to_fhir', data=pdf_bytes)
+    self.assertEqual(response.status_code, 400)
+    self.assertIn(
+        'PDF exceeds the maximum allowed number of pages.'.encode('utf-8'),
+        response.data,
+    )
+
+  def test_document_to_fhir_pdf_too_many_pages_with_header(self):
+    max_pages = 40
+    # Create a PDF with 41 pages using pypdfium2
+    with io.BytesIO() as out_buffer:
+      pdf = pypdfium2.PdfDocument.new()
+      for _ in range(max_pages + 1):
+        pdf.new_page(612, 792)
+      pdf.save(out_buffer)
+      pdf_bytes = out_buffer.getvalue()
+
+    response = self.client.post(
+        '/document_to_fhir',
+        data=pdf_bytes,
+        headers={'Content-Type': 'application/pdf'},
+    )
+    self.assertEqual(response.status_code, 400)
+    self.assertIn(
+        'PDF exceeds the maximum allowed number of pages.'.encode('utf-8'),
+        response.data,
+    )
+
+  @unittest.mock.patch(
+      'src.rest_server._CONFIG_FILE'
+  )
+  @unittest.mock.patch(
+      'src.rest_server.os.path.exists'
+  )
+  @unittest.mock.patch(
+      'src.rest_server.yaml.safe_load'
+  )
+  @unittest.mock.patch(
+      'builtins.open', new_callable=unittest.mock.mock_open, read_data='dummy'
+  )
+  def test_get_max_pdf_pages_initialization_and_caching(
+      self,
+      _,
+      mock_yaml_load,
+      mock_exists,
+      mock_config_file,
+  ):
+    self.max_pages_patcher.stop()
+    rest_server._max_pdf_pages = None  # Ensure re-initialization
+    mock_exists.return_value = True
+    mock_config_file.value = 'dummy.yaml'
+    mock_yaml_load.return_value = {'max_pdf_pages': 55}
+
+    # First call should load from config
+    max_pages = rest_server._get_max_pdf_pages()
+    self.assertEqual(max_pages, 55)
+    mock_yaml_load.assert_called_once()
+
+    # Second call should use cached value and NOT call yaml_load again
+    mock_yaml_load.reset_mock()
+    max_pages2 = rest_server._get_max_pdf_pages()
+    self.assertEqual(max_pages2, 55)
+    mock_yaml_load.assert_not_called()
 
 
 if __name__ == '__main__':

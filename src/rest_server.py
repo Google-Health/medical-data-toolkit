@@ -63,6 +63,8 @@ _DOCUMENT_TYPE_MAPPING = {
     },
 }
 
+_MAX_PDF_PAGES_DEFAULT = 40
+
 _EMPTY_BODY_ERROR = 'Message body is empty.'
 _NOT_PDF_OR_IMAGE_BYTES_ERROR = (
     'Message body does not encode PDF or image bytes.'
@@ -73,13 +75,20 @@ _composite_standardizer: (
 ) = None
 _standardizer_lock = threading.Lock()
 
+_max_pdf_pages: int | None = None
+_max_pdf_pages_lock = threading.Lock()
+
 
 def _init_fork_module_state():
   """Re-initializes module state in forked child processes."""
   global _composite_standardizer
   global _standardizer_lock
+  global _max_pdf_pages
+  global _max_pdf_pages_lock
   _composite_standardizer = None
   _standardizer_lock = threading.Lock()
+  _max_pdf_pages = None
+  _max_pdf_pages_lock = threading.Lock()
 
 
 def get_composite_standardizer() -> (
@@ -129,6 +138,9 @@ def get_composite_standardizer() -> (
               attach_document_to_bundle=config.get(
                   'ATTACH_DOCUMENT_TO_BUNDLE', False
               ),
+              return_metadata=config.get(
+                  'RETURN_METADATA', False
+              ),
           )
       )
   return _composite_standardizer
@@ -146,20 +158,24 @@ def _document_to_fhir(file_bytes: bytes, mime_type: str) -> flask.Response:
 
   try:
     result = composite_standardizer.standardize(file_bytes, mime_type=mime_type)
-    return flask.make_response(flask.jsonify(result.model_dump()), 200)
+    # Use mode='json' to ensure Pydantic serializes datetime/date fields
+    # to ISO 8601 format (including custom serializers) before passing
+    # to flask.jsonify, which would otherwise format datetimes to RFC 1123.
+    return flask.make_response(
+        flask.jsonify(result.model_dump(mode='json')), 200
+    )
   except (
       ValueError,
       pydantic.ValidationError,
       model_client.ResponseParsingError,
   ) as e:
     logging.error(
-        'Document standardization failed with validation/parsing error.'
+        'Document standardization failed with validation/parsing error: %s', e
     )
     logging.debug('Validation/parsing error details:', exc_info=e)
     return _flask_error(f'Document standardization failed: {e}', 422)
-  except Exception as e:  # pylint: disable=broad-except
-    logging.error('Unexpected error during document standardization.')
-    logging.debug('Unexpected error details:', exc_info=e)
+  except Exception:  # pylint: disable=broad-except
+    logging.exception('Unexpected error during document standardization.')
     return _flask_error('Failed to convert document to FHIR.', 500)
 
 
@@ -200,6 +216,42 @@ def _get_image_mime_type(file_bytes: bytes) -> str:
     return 'image/png'
 
 
+def _get_max_pdf_pages() -> int:
+  """Returns the maximum number of PDF pages allowed, initialized from config.
+
+  The path to the configuration file is determined by the --config_file flag.
+
+  Raises:
+    ValueError: If no configuration file is specified by flag.
+    FileNotFoundError: If the specified configuration file does not exist.
+  """
+  global _max_pdf_pages
+  if _max_pdf_pages is not None:
+    return _max_pdf_pages
+
+  with _max_pdf_pages_lock:
+    if _max_pdf_pages is None:
+      try:
+        config_file = _CONFIG_FILE.value
+      except flags.UnparsedFlagAccessError:
+        config_file = None
+
+      if not config_file:
+        raise ValueError('Configuration file not specified via flag.')
+
+      if not os.path.exists(config_file):
+        raise FileNotFoundError(
+            f'Configuration file not found at: {config_file}'
+        )
+
+      _max_pdf_pages = _MAX_PDF_PAGES_DEFAULT
+      with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+      if config:
+        _max_pdf_pages = config.get('max_pdf_pages', _MAX_PDF_PAGES_DEFAULT)
+  return _max_pdf_pages
+
+
 def _validate_or_infer_content_type(
     data: bytes, header_type: str | None
 ) -> str:
@@ -215,9 +267,14 @@ def _validate_or_infer_content_type(
   Raises:
     ValueError: If validation fails or type cannot be determined.
   """
+  max_pdf_pages = _get_max_pdf_pages()
+
   if header_type:
     if header_type == 'application/pdf':
-      if _pdf_page_count(data) > 0:
+      page_count = _pdf_page_count(data)
+      if page_count > max_pdf_pages:
+        raise ValueError('PDF exceeds the maximum allowed number of pages.')
+      if page_count > 0:
         return header_type
       raise ValueError('Data is not a valid PDF but header claims it is.')
     elif header_type.startswith('image/'):
@@ -227,7 +284,10 @@ def _validate_or_infer_content_type(
     else:
       raise ValueError(f'Unsupported Content-Type: {header_type}')
 
-  if _pdf_page_count(data) > 0:
+  page_count = _pdf_page_count(data)
+  if page_count > max_pdf_pages:
+    raise ValueError('PDF exceeds the maximum allowed number of pages.')
+  if page_count > 0:
     return 'application/pdf'
   if _is_image(data):
     return _get_image_mime_type(data)
