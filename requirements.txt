@@ -892,9 +892,9 @@ jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
     # via jsonschema
-litellm==1.83.14 \
-    --hash=sha256:24aef9b47cdc424c833e32f3727f411741c690832cd1fe4405e0077144fe09c9 \
-    --hash=sha256:92b11ba2a32cf80707ddf388d18526696c7999a21b418c5e3b6eda1243d2cfdb
+litellm==1.84.0 \
+    --hash=sha256:2a58d6041e6aa27d1a28dc8d8828ab500fef1a00ef74ca65e60899035010c2f2 \
+    --hash=sha256:b8ad0cbea11a5941b18d5af973017a340abd3d3ab41cb86e5401b970626d71a6
     # via -r requirements.in
 markdown-it-py==4.0.0 \
     --hash=sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147 \
@@ -2364,11 +2364,3 @@ zipp==3.23.1 \
     --hash=sha256:0b3596c50a5c700c9cb40ba8d86d9f2cc4807e9bedb06bcdf7fac85633e444dc \
     --hash=sha256:32120e378d32cd9714ad503c1d024619063ec28aad2248dc6672ad13edfa5110
     # via importlib-metadata
-google-fhir-core==0.11.0 \
-    --hash=sha256:1e09581efa9fa0b92985098f1a69c9ef3b2ecf889f4d16386398d13556114102
-    # via
-    #   -r /requirements.in
-    #   google-fhir-r4
-google-fhir-r4==0.11.0 \
-    --hash=sha256:53a6d75b8db786fe6a4481e08d31274a2d9f72fd754b73e370abc5bbe9019315
-    # via -r /requirements.in
