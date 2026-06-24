@@ -14,12 +14,15 @@
 """REST server for the MDDAS."""
 
 from collections.abc import Mapping, Sequence
+import contextvars
+import http
 import io
 import logging as std_logging
 import os
 import sys
 import threading
-from typing import Any
+import time
+from typing import Any, Optional
 
 from absl import app as absl_app
 from absl import flags
@@ -48,7 +51,50 @@ from src.document_to_fhir.core.orchestrator import composite_document_standardiz
 from src.document_to_fhir.core.orchestrator import medical_document_standardizer
 
 
+# Context variable to store the job_id for the current request context.
+_job_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    'job_id', default=None
+)
+
+# Custom log record factory to prefix job_id to all log messages.
+_orig_log_record_factory = std_logging.getLogRecordFactory()
+
+
+def _job_id_log_record_factory(*args, **kwargs):
+  record = _orig_log_record_factory(*args, **kwargs)
+  job_id = _job_id_var.get()
+  if job_id:
+    if isinstance(record.msg, str):
+      record.msg = f'[job={job_id}] {record.msg}'
+  return record
+
+
+std_logging.setLogRecordFactory(_job_id_log_record_factory)
+
+
 flask_app = flask.Flask(__name__)
+
+
+@flask_app.before_request
+def _set_job_id():
+  # Extract job_id from headers (case-insensitive)
+  job_id = (
+      flask.request.headers.get('Job-Id')
+      or flask.request.headers.get('X-Job-Id')
+      or flask.request.headers.get('job_id')
+  )
+  if job_id:
+    _job_id_var.set(job_id)
+  else:
+    _job_id_var.set(None)
+
+
+@flask_app.teardown_request
+def _clear_job_id(exception=None):
+  del exception  # Unused
+  _job_id_var.set(None)
+
+
 _CONFIG_FILE = flags.DEFINE_string(
     'config_file', None, 'Path to the YAML configuration file.'
 )
@@ -154,7 +200,10 @@ def _document_to_fhir(file_bytes: bytes, mime_type: str) -> flask.Response:
   """Returns the FHIR representation of a document."""
   composite_standardizer = get_composite_standardizer()
   if composite_standardizer is None:
-    return _flask_error('CompositeDocumentStandardizer not initialized', 500)
+    return _flask_error(
+        'CompositeDocumentStandardizer not initialized',
+        http.HTTPStatus.INTERNAL_SERVER_ERROR,
+    )
 
   try:
     result = composite_standardizer.standardize(file_bytes, mime_type=mime_type)
@@ -162,7 +211,7 @@ def _document_to_fhir(file_bytes: bytes, mime_type: str) -> flask.Response:
     # to ISO 8601 format (including custom serializers) before passing
     # to flask.jsonify, which would otherwise format datetimes to RFC 1123.
     return flask.make_response(
-        flask.jsonify(result.model_dump(mode='json')), 200
+        flask.jsonify(result.model_dump(mode='json')), http.HTTPStatus.OK
     )
   except (
       ValueError,
@@ -173,10 +222,16 @@ def _document_to_fhir(file_bytes: bytes, mime_type: str) -> flask.Response:
         'Document standardization failed with validation/parsing error: %s', e
     )
     logging.debug('Validation/parsing error details:', exc_info=e)
-    return _flask_error(f'Document standardization failed: {e}', 422)
+    return _flask_error(
+        f'Document standardization failed: {e}',
+        http.HTTPStatus.UNPROCESSABLE_ENTITY,
+    )
   except Exception:  # pylint: disable=broad-except
     logging.exception('Unexpected error during document standardization.')
-    return _flask_error('Failed to convert document to FHIR.', 500)
+    return _flask_error(
+        'Failed to convert document to FHIR.',
+        http.HTTPStatus.INTERNAL_SERVER_ERROR,
+    )
 
 
 def _pdf_page_count(file_bytes: bytes) -> int:
@@ -207,13 +262,25 @@ def _is_image(file_bytes: bytes) -> bool:
 
 
 def _get_image_mime_type(file_bytes: bytes) -> str:
-  """Returns the mime type of the image, defaulting to image/png."""
+  """Returns the mime type of the image.
+
+  Args:
+    file_bytes: The image file bytes.
+
+  Returns:
+    The mime type of the image.
+
+  Raises:
+    ValueError: If the image format is unsupported.
+  """
   try:
     with io.BytesIO(file_bytes) as image_bytes:
       with PIL.Image.open(image_bytes) as img:
+        if not img.format:
+          raise ValueError('Unsupported image format.')
         return f'image/{img.format.lower()}'
-  except Exception:  # pylint: disable=broad-except
-    return 'image/png'
+  except Exception as e:  # pylint: disable=broad-except
+    raise ValueError('Unsupported image format.') from e
 
 
 def _get_max_pdf_pages() -> int:
@@ -278,6 +345,8 @@ def _validate_or_infer_content_type(
         return header_type
       raise ValueError('Data is not a valid PDF but header claims it is.')
     elif header_type.startswith('image/'):
+      if header_type not in ('image/png', 'image/jpeg'):
+        raise ValueError(f'Unsupported Content-Type: {header_type}')
       if _is_image(data):
         return header_type
       raise ValueError('Data is not a valid image but header claims it is.')
@@ -290,7 +359,10 @@ def _validate_or_infer_content_type(
   if page_count > 0:
     return 'application/pdf'
   if _is_image(data):
-    return _get_image_mime_type(data)
+    mime_type = _get_image_mime_type(data)
+    if mime_type not in ('image/png', 'image/jpeg'):
+      raise ValueError('Unsupported image format.')
+    return mime_type
 
   raise ValueError(_NOT_PDF_OR_IMAGE_BYTES_ERROR)
 
@@ -300,16 +372,34 @@ def _validate_or_infer_content_type(
 )
 def document_to_fhir() -> flask.Response:
   """Document to FHIR endpoint for the server (flask.Response)."""
-  binary_data = flask.request.get_data()
-  if not binary_data:
-    return _flask_error(_EMPTY_BODY_ERROR, 400)
-  header_type = flask.request.headers.get('Content-Type')
+  start_time = time.perf_counter()
+  response = None
   try:
-    content_type = _validate_or_infer_content_type(binary_data, header_type)
-  except ValueError as e:
-    return _flask_error(str(e), 400)
+    binary_data = flask.request.get_data()
+    if not binary_data:
+      response = _flask_error(_EMPTY_BODY_ERROR, http.HTTPStatus.BAD_REQUEST)
+      return response
+    header_type = flask.request.headers.get('Content-Type')
+    try:
+      content_type = _validate_or_infer_content_type(binary_data, header_type)
+    except ValueError as e:
+      response = _flask_error(str(e), http.HTTPStatus.BAD_REQUEST)
+      return response
 
-  return _document_to_fhir(binary_data, content_type)
+    response = _document_to_fhir(binary_data, content_type)
+    return response
+  finally:
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    status_code = (
+        response.status_code
+        if response
+        else http.HTTPStatus.INTERNAL_SERVER_ERROR
+    )
+    logging.info(
+        'MDDAS API /document_to_fhir: Status %d | Total Server Time: %.2fms',
+        status_code,
+        latency_ms,
+    )
 
 
 @flask_app.route('/', methods=['GET', 'POST'], endpoint='healthcheck')

@@ -34,7 +34,7 @@ class ClassifierTest(absltest.TestCase):
       "src.document_to_fhir.core.classification.classifier.read_prompt"
   )
   @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_pdf_to_parts"
+      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
   )
   def test_multi_document_classifier_no_chunks(
       self, mock_chunk, mock_load_prompt
@@ -69,7 +69,7 @@ class ClassifierTest(absltest.TestCase):
     )
 
   @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_pdf_to_parts"
+      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
   )
   def test_multi_document_classifier_with_chunks(self, mock_chunk):
     mock_chunk.return_value = [
@@ -472,6 +472,94 @@ class ClassifierTest(absltest.TestCase):
     actual_types = [seg.document_type for seg in actual.segments]
 
     self.assertEqual(expected_types, actual_types)
+
+  def test_chunk_images_to_parts(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    images = [b"img1", b"img2", b"img3"]
+    chunk_size = 2
+    overlap = 0
+
+    expected = [
+        [
+            types.Part.from_text(text="==Start of Document==\n"),
+            types.Part.from_text(text="==Screenshot for page 1==\n"),
+            types.Part.from_bytes(data=b"img1", mime_type="image/png"),
+            types.Part.from_text(text="==Screenshot for page 2==\n"),
+            types.Part.from_bytes(data=b"img2", mime_type="image/png"),
+            types.Part.from_text(text="\n==End of Document==\n\n"),
+        ],
+        [
+            types.Part.from_text(text="==Start of Document==\n"),
+            types.Part.from_text(text="==Screenshot for page 3==\n"),
+            types.Part.from_bytes(data=b"img3", mime_type="image/png"),
+            types.Part.from_text(text="\n==End of Document==\n\n"),
+        ],
+    ]
+
+    actual = c._chunk_images_to_parts(images, chunk_size, overlap, "image/png")
+    self.assertEqual(actual, expected)
+
+  def test_chunk_images_to_parts_with_overlap(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    images = [b"img1", b"img2", b"img3"]
+    chunk_size = 2
+    overlap = 1
+
+    expected = [
+        [
+            types.Part.from_text(text="==Start of Document==\n"),
+            types.Part.from_text(text="==Screenshot for page 1==\n"),
+            types.Part.from_bytes(data=b"img1", mime_type="image/png"),
+            types.Part.from_text(text="==Screenshot for page 2==\n"),
+            types.Part.from_bytes(data=b"img2", mime_type="image/png"),
+            types.Part.from_text(text="\n==End of Document==\n\n"),
+        ],
+        [
+            types.Part.from_text(text="==Start of Document==\n"),
+            types.Part.from_text(text="==Screenshot for page 2==\n"),
+            types.Part.from_bytes(data=b"img2", mime_type="image/png"),
+            types.Part.from_text(text="==Screenshot for page 3==\n"),
+            types.Part.from_bytes(data=b"img3", mime_type="image/png"),
+            types.Part.from_text(text="\n==End of Document==\n\n"),
+        ],
+        [
+            types.Part.from_text(text="==Start of Document==\n"),
+            types.Part.from_text(text="==Screenshot for page 3==\n"),
+            types.Part.from_bytes(data=b"img3", mime_type="image/png"),
+            types.Part.from_text(text="\n==End of Document==\n\n"),
+        ],
+    ]
+
+    actual = c._chunk_images_to_parts(images, chunk_size, overlap, "image/png")
+    self.assertEqual(actual, expected)
+
+  def test_chunk_images_to_parts_raises_value_error(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    with self.assertRaises(ValueError):
+      c._chunk_images_to_parts(
+          [b"img1"], chunk_size=2, overlap=2, mime_type="image/png"
+      )
+
+  def test_prepare_request_contents_images(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+    images = [b"img1"]
+
+    expected = [[
+        types.Part.from_text(text="==Start of Document==\n"),
+        types.Part.from_text(text="==Screenshot for page 1==\n"),
+        types.Part.from_bytes(data=b"img1", mime_type="image/jpeg"),
+        types.Part.from_text(text="\n==End of Document==\n\n"),
+        types.Part.from_text(text="test prompt"),
+    ]]
+
+    actual = c._prepare_request_contents(
+        images,
+        "test prompt",
+        mime_type="image/jpeg",
+        chunk_size=15,
+        overlap=1,
+    )
+    self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

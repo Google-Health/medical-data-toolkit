@@ -14,9 +14,11 @@
 """Medical document classification library."""
 
 import abc
+import contextvars
 import logging
 import os
-from typing import Any, Union
+import time
+from typing import Any, Optional, Union
 
 from google.genai import types
 
@@ -25,6 +27,12 @@ from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common import pdf_util
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
+
+
+# Context variable to store individual classification call latencies.
+classification_latencies_var: contextvars.ContextVar[Optional[list[float]]] = (
+    contextvars.ContextVar("classification_latencies", default=None)
+)
 
 
 def read_prompt(prompt_path: str) -> str:
@@ -85,16 +93,13 @@ class DocumentClassifierBase(abc.ABC):
     """Marks segments as handwritten if they meet the threshold."""
     pass
 
-  def _chunk_pdf_to_parts(
-      self, pdf_bytes: bytes, chunk_size: int, overlap: int
+  def _chunk_images_to_parts(
+      self, images: list[bytes], chunk_size: int, overlap: int, mime_type: str
   ) -> list[list[types.Part]]:
-    """Splits a PDF into smaller chunks of pages represented as lists of Parts."""
+    """Splits a list of images (pages) into smaller chunks represented as lists of Parts."""
     if overlap >= chunk_size:
       raise ValueError("Chunk size needs to be greater than overlap.")
 
-    images = pdf_util.convert_pdf_pages_to_png_images(
-        pdf_bytes, TARGET_PDF_TO_IMAGE_DPI
-    )
     total_pages = len(images)
 
     all_chunks_parts = []
@@ -110,7 +115,7 @@ class DocumentClassifierBase(abc.ABC):
             types.Part.from_text(text=f"==Screenshot for page {i + 1}==\n")
         )
         current_chunk_parts.append(
-            types.Part.from_bytes(data=images[i], mime_type="image/png")
+            types.Part.from_bytes(data=images[i], mime_type=mime_type)
         )
       current_chunk_parts.append(
           types.Part.from_text(text="\n==End of Document==\n\n")
@@ -124,61 +129,36 @@ class DocumentClassifierBase(abc.ABC):
       self,
       data: Union[bytes, list[bytes]],
       prompt: str,
-      mime_type: str = "application/pdf",
+      mime_type: str = "image/png",
       chunk_size: int = 15,
       overlap: int = 1,
   ) -> list[list[Any]]:
     """Prepares the request contents for the LLM client.
 
-    If the client supports PDF and the mime_type is application/pdf, the PDF
-    bytes are sent directly. Otherwise, the PDF is converted to PNG images
-    (if applicable), and the images are sent.
-
     Args:
-      data: The document data, either as bytes (for PDF or a single image) or a
-        list of bytes (for multiple images).
+      data: The document data, either as bytes (for single image) or a list of
+        bytes (for multiple images).
       prompt: The prompt string to be included in the request.
-      mime_type: The MIME type of the data. Can be "application/pdf" or
-        "image/png".
-      chunk_size: The number of pages in each chunk (only for PDF).
-      overlap: The number of pages to overlap between consecutive chunks (only
-        for PDF).
+      mime_type: The MIME type of the data. Can be "image/png".
+      chunk_size: The number of pages in each chunk.
+      overlap: The number of pages to overlap between consecutive chunks.
 
     Returns:
       A list of lists, where each inner list contains `types.Part` objects and
       the prompt string for a chunk.
     """
-    if mime_type == "application/pdf":
-      if self.client.supports_pdf:
-        return [[
-            types.Part.from_bytes(data=data, mime_type=mime_type),
-            types.Part.from_text(text=prompt),
-        ]]
+    images = [data] if isinstance(data, bytes) else data
+    actual_mime_type = (
+        mime_type if mime_type.startswith("image/") else "image/png"
+    )
 
-      pdf_chunks = self._chunk_pdf_to_parts(data, chunk_size, overlap)
-      return [
-          chunk_parts + [types.Part.from_text(text=prompt)]
-          for chunk_parts in pdf_chunks
-      ]
-    else:  # Images (single or multiple)
-      images = [data] if isinstance(data, bytes) else data
-      actual_mime_type = (
-          mime_type if mime_type.startswith("image/") else "image/png"
-      )
-
-      request_contents = [types.Part.from_text(text="==Start of Document==\n")]
-      for i, img in enumerate(images):
-        request_contents.append(
-            types.Part.from_text(text=f"==Screenshot for page {i + 1}==\n")
-        )
-        request_contents.append(
-            types.Part.from_bytes(data=img, mime_type=actual_mime_type)
-        )
-      request_contents.append(
-          types.Part.from_text(text="\n==End of Document==\n\n")
-      )
-      request_contents.append(types.Part.from_text(text=prompt))
-      return [request_contents]
+    image_chunks = self._chunk_images_to_parts(
+        images, chunk_size, overlap, actual_mime_type
+    )
+    return [
+        chunk_parts + [types.Part.from_text(text=prompt)]
+        for chunk_parts in image_chunks
+    ]
 
 
 class MultiDocumentClassifier(DocumentClassifierBase):
@@ -234,16 +214,17 @@ class MultiDocumentClassifier(DocumentClassifierBase):
           standardized_composite_medical_document.CompositeDocument
       ],
   ) -> standardized_composite_medical_document.CompositeDocument:
-    """Merges classification outputs from multiple PDF chunks.
+    """Merges classification outputs from multiple chunks of a document.
 
     This method takes a list of CompositeDocument objects, each representing the
-    classification of a chunk of a larger PDF. It merges these outputs,
+    classification of a chunk of a larger document. It merges these outputs,
     handling overlaps between chunks to produce a single CompositeDocument
-    for the entire original PDF.
+    for the entire original document.
 
     Args:
       classification_outputs: A list of CompositeDocument objects, where each
-        object contains the classification segments for a PDF chunk.
+        object contains the classification segments for a chunk of images from
+        the original document.
 
     Returns:
       A single CompositeDocument containing the merged and de-duplicated
@@ -314,21 +295,20 @@ class MultiDocumentClassifier(DocumentClassifierBase):
       temperature: float = 0.0,
       split_into_chunks: bool = True,
       chunk_size: int = 15,
-      mime_type: str = "application/pdf",
+      mime_type: str = "image/png",
   ) -> standardized_composite_medical_document.CompositeDocument:
     """Classifies a multi-page medical document into segments.
 
     Args:
-      data: The document data, either as bytes (for PDF or a single image) or a
+      data: The document data, either as bytes (for single image) or a list of
         list of bytes (for multiple images).
       prompt: The prompt to use for the classification.
       temperature: The temperature for the LLM.
-      split_into_chunks: Whether to split the PDF into chunks before sending to
-        the LLM. This is useful for very large PDFs.
-      chunk_size: The number of pages in each chunk if `split_into_chunks` is
+      split_into_chunks: Whether to split the list of images into chunks before
+        sending to the LLM. This is useful for very large documents.
+      chunk_size: The number of images in each chunk if `split_into_chunks` is
         True.
-      mime_type: The MIME type of the data. Can be "application/pdf" or an image
-        mime type (e.g. "image/png").
+      mime_type: The MIME type of the data. Can be "image/png" or "image/jpeg".
 
     Returns:
       A CompositeDocument containing the classified segments of the document.
@@ -354,25 +334,71 @@ class MultiDocumentClassifier(DocumentClassifierBase):
         overlap=overlap,
     )
 
-    if len(chunks_of_contents) == 1:
-      return self._get_classification_response(
-          chunks_of_contents[0], temperature
+    document_classification_outputs = []
+    total_chunks = len(chunks_of_contents)
+
+    for index, contents in enumerate(chunks_of_contents):
+      chunk_num = index + 1
+      logging.info(
+          "Processing classification chunk %d/%d...", chunk_num, total_chunks
       )
 
-    document_classification_outputs = []
-    for index, contents in enumerate(chunks_of_contents):
-      logging.warning(
-          "Processing chunk %d/%d", index + 1, len(chunks_of_contents)
-      )
+      start_time = time.perf_counter()
       composite_document_part = self._get_classification_response(
           contents, temperature
       )
+      latency = (time.perf_counter() - start_time) * 1000.0
+
+      latencies_list = classification_latencies_var.get()
+      if latencies_list is not None:
+        latencies_list.append(latency)
 
       if composite_document_part is None:
-        logging.error("Chunk %d returned None, skipping.", index + 1)
+        logging.error(
+            "Classification chunk %d/%d FAILED (returned None)",
+            chunk_num,
+            total_chunks,
+        )
         continue
+
+      # Get tokens for this specific call from the contextvar
+      usages = model_client.token_usage_var.get()
+      usage_str = "N/A"
+      if usages:
+        u = usages[-1]
+        usage_str = (
+            f"[Prompt: {u.prompt_tokens}, Completion: {u.completion_tokens},"
+            f" Total: {u.total_tokens}]"
+        )
+
+      segments_details = []
+      for i, seg in enumerate(composite_document_part.segments):
+        segments_details.append(
+            f"  - Segment {i+1}: {seg.document_type} (Pages:"
+            f" {seg.start_page}-{seg.end_page})"
+        )
+      segments_str = (
+          "\n".join(segments_details)
+          if segments_details
+          else "  - No segments identified"
+      )
+
+      logging.info(
+          "Classification chunk %d/%d completed | "
+          f"Tokens: {usage_str} | "
+          f"Latency: {latency:.2f}ms\n"
+          f"{segments_str}",
+          chunk_num,
+          total_chunks,
+      )
+
       document_classification_outputs.append(
           sort_document_segments(composite_document_part)
+      )
+
+    if not document_classification_outputs:
+      return standardized_composite_medical_document.CompositeDocument(
+          segments=[]
       )
 
     merged_output = self._merge_outputs(document_classification_outputs)

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from unittest import mock
 
 from absl.testing import absltest
@@ -112,7 +113,11 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.mock_classifier.classify.return_value = mock_doc
 
     # Mock standardizer for LAB_REPORT
-    self.mock_standardizer.standardize.return_value = (mock.Mock(), mock.Mock())
+    self.mock_standardizer.standardize.return_value = (
+        mock.Mock(),
+        mock.Mock(),
+        {},
+    )
 
     standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
         classifier=self.mock_classifier,
@@ -123,8 +128,8 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     result = standardizer.standardize(b"fake_pdf_content")
 
     self.mock_classifier.classify.assert_called_once()
-    # Since we have at least one segment to process (LABORATORY_REPORT), it should NOT
-    # return early.
+    # Since we have at least one segment to process (LABORATORY_REPORT), it
+    # should NOT return early.
     mock_convert.assert_called_once()
     # We only have standardizer for LAB_REPORT
     self.mock_standardizer.standardize.assert_called_once()
@@ -174,7 +179,11 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.mock_classifier.classify.return_value = mock_doc
 
     # Mock standardizer to return something
-    self.mock_standardizer.standardize.return_value = (mock.Mock(), mock.Mock())
+    self.mock_standardizer.standardize.return_value = (
+        mock.Mock(),
+        mock.Mock(),
+        {},
+    )
 
     standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
         classifier=self.mock_classifier,
@@ -235,9 +244,9 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     result = standardizer.standardize(b"fake_pdf_content")
 
     self.mock_classifier.classify.assert_called_once()
-    # In the current implementation, if segments_to_process is empty,
-    # it returns early BEFORE conversion.
-    mock_convert.assert_not_called()
+    # Pre-processing is run upfront before classification, so
+    # mock_convert is called.
+    mock_convert.assert_called_once()
     self.mock_standardizer.standardize.assert_not_called()
     self.assertEqual(result.n_documents, 2)
     self.assertEqual(
@@ -281,7 +290,11 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.mock_classifier.classify.return_value = mock_doc
 
     # Mock standardizer
-    self.mock_standardizer.standardize.return_value = (mock.Mock(), mock.Mock())
+    self.mock_standardizer.standardize.return_value = (
+        mock.Mock(),
+        mock.Mock(),
+        {},
+    )
 
     standardizer = (
         composite_document_standardizer.CompositeDocumentStandardizer(
@@ -338,7 +351,15 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
         usage_list.append(
             LLMUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30)
         )
-      return mock.Mock(), mock.Mock()
+      return (
+          mock.Mock(),
+          mock.Mock(),
+          {
+              "extraction": 10.0,
+              "terminology_mapping": 5.0,
+              "fhir_generation": 2.0,
+          },
+      )
 
     self.mock_standardizer.standardize.side_effect = mock_standardize
 
@@ -360,13 +381,127 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.assertLen(result.metadata.latency_ms["standardization"]["segments"], 1)
 
     # Verify tokens
+    self.assertLen(result.metadata.token_usage["classification"], 1)
     self.assertEqual(
-        result.metadata.token_usage["classification"]["total_tokens"], 15
+        result.metadata.token_usage["classification"][0]["total_tokens"], 15
+    )
+    self.assertLen(result.metadata.token_usage["standardization"], 1)
+    self.assertEqual(
+        result.metadata.token_usage["standardization"][0]["document_type"],
+        document_types.MedicalDocumentType.LABORATORY_REPORT.value,
+    )
+    self.assertLen(
+        result.metadata.token_usage["standardization"][0]["calls"], 1
     )
     self.assertEqual(
-        result.metadata.token_usage["standardization"]["total_tokens"], 30
+        result.metadata.token_usage["standardization"][0]["calls"][0][
+            "total_tokens"
+        ],
+        30,
     )
-    self.assertEqual(result.metadata.token_usage["total"]["total_tokens"], 45)
+    self.assertNotIn("total", result.metadata.token_usage)
+
+  def test_standardize_unsupported_mime_type_raises_value_error(self):
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+        )
+    )
+    with self.assertRaises(ValueError):
+      standardizer.standardize(b"fake_content", mime_type="text/plain")
+
+  @mock.patch(
+      "src.document_to_fhir.core.orchestrator.composite_document_standardizer.json_format.print_fhir_to_json_string"
+  )
+  @mock.patch(
+      "src.document_to_fhir.common.pdf_util.convert_pdf_pages_to_png_images"
+  )
+  def test_standardize_image_input(self, mock_convert, mock_print_fhir):
+    mock_print_fhir.return_value = "{}"
+    # Mock classifier
+    mock_segment = mock.Mock()
+    mock_segment.document_type = (
+        document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_segment.start_page = 1
+    mock_segment.end_page = 1
+    mock_doc = mock.Mock()
+    mock_doc.segments = [mock_segment]
+    self.mock_classifier.classify.return_value = mock_doc
+
+    # Mock standardizer
+    self.mock_standardizer.standardize.return_value = (
+        mock.Mock(),
+        mock.Mock(),
+        {},
+    )
+
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+        )
+    )
+
+    result = standardizer.standardize(
+        b"fake_image_content", mime_type="image/jpeg"
+    )
+
+    # pdf_util.convert_pdf_pages_to_png_images should not be called.
+    mock_convert.assert_not_called()
+    self.mock_classifier.classify.assert_called_once_with(
+        [b"fake_image_content"], temperature=0, mime_type="image/jpeg"
+    )
+    self.assertEqual(result.n_documents, 1)
+
+  @mock.patch(
+      "src.document_to_fhir.core.orchestrator.composite_document_standardizer.json_format.print_fhir_to_json_string"
+  )
+  def test_standardize_with_log_metrics_false(self, mock_print_fhir):
+    mock_print_fhir.return_value = "{}"
+    # Mock classifier
+    mock_segment = mock.Mock()
+    mock_segment.document_type = (
+        document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_segment.start_page = 1
+    mock_segment.end_page = 1
+    mock_doc = mock.Mock()
+    mock_doc.segments = [mock_segment]
+    self.mock_classifier.classify.return_value = mock_doc
+
+    # Mock standardizer
+    self.mock_standardizer.standardize.return_value = (
+        mock.Mock(),
+        mock.Mock(),
+        {},
+    )
+
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+            log_metrics=False,
+        )
+    )
+
+    # We assert that no log messages at level INFO or above are printed
+    # by our pipeline metrics logger when log_metrics=False.
+    with self.assertLogs(level="INFO") as log_watcher:
+      logging.info("dummy_log_before")
+      standardizer.standardize(b"fake_image_content", mime_type="image/jpeg")
+      logging.info("dummy_log_after")
+
+    # The pipeline metrics log should NOT be in log_watcher.output
+    has_pipeline_metrics_log = any(
+        "MDDAS Pipeline Metrics" in log for log in log_watcher.output
+    )
+    self.assertFalse(
+        has_pipeline_metrics_log,
+        "Pipeline metrics were logged even though log_metrics=False:"
+        f" {log_watcher.output}",
+    )
 
 
 if __name__ == "__main__":

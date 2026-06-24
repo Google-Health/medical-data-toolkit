@@ -19,15 +19,19 @@ import concurrent.futures
 import json
 import logging
 import time
+from typing import Any
 
 from google.fhir.r4 import json_format
+from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common import pdf_util
-from src.document_to_fhir.common.model_client import token_usage_var
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 from src.document_to_fhir.core.classification import classifier as classifier_lib
 from src.document_to_fhir.core.fhir.abdm import abdm_bundle_enricher
 from src.document_to_fhir.core.orchestrator import medical_document_standardizer
+
+
+token_usage_var = model_client.token_usage_var
 
 
 # Standard DPI for PDF to Image conversion
@@ -48,12 +52,14 @@ class CompositeDocumentStandardizer:
       document_standardization_policy: document_types.DocumentStandardizationPolicy = document_types.DocumentStandardizationPolicy.ACCEPT_ALL,
       attach_document_to_bundle: bool = False,
       return_metadata: bool = False,
+      log_metrics: bool = True,
   ):
     self.classifier = classifier
     self.document_standardizers = standardizers
     self.document_standardization_policy = document_standardization_policy
     self.attach_document_to_bundle = attach_document_to_bundle
     self.return_metadata = return_metadata
+    self.log_metrics = log_metrics
 
   def _process_segment(self, segment_images, mime_type, segment):
     """Processes a single document segment.
@@ -81,10 +87,11 @@ class CompositeDocumentStandardizer:
       standardizer = self.document_standardizers.get(document_type)
 
       medical_document, fhir_bundle = None, None
+      step_latencies = {}
 
       if standardizer:
-        medical_document, fhir_bundle = standardizer.standardize(
-            segment_images, mime_type=mime_type
+        medical_document, fhir_bundle, step_latencies = (
+            standardizer.standardize(segment_images, mime_type=mime_type)
         )
       else:
         logging.warning("No standardizer for %s. Skipping.", document_type)
@@ -103,7 +110,7 @@ class CompositeDocumentStandardizer:
           fhir_bundle=fhir_json,
       )
       latency_ms = (time.perf_counter() - start_time) * _MS_PER_SECOND
-      return standardized_document, latency_ms, segment_usages
+      return standardized_document, latency_ms, segment_usages, step_latencies
     finally:
       token_usage_var.reset(token)
 
@@ -164,6 +171,91 @@ class CompositeDocumentStandardizer:
 
     return segments_to_process, segments_to_pass_through
 
+  def _log_pipeline_metrics(
+      self,
+      total_pages: int,
+      latencies: dict[str, Any],
+      token_usages: dict[str, Any],
+      composite_doc: (
+          standardized_composite_medical_document.CompositeDocument | None
+      ) = None,
+  ):
+    """Logs detailed pipeline metrics including latencies and token usages."""
+    classify_calls = token_usages.get("classification", [])
+    classify_lats = latencies.get("classification_calls", [])
+    classify_calls_log_parts = []
+    for i, u in enumerate(classify_calls):
+      lat_str = (
+          f" | Latency: {classify_lats[i]:.2f}ms"
+          if i < len(classify_lats)
+          else ""
+      )
+      classify_calls_log_parts.append(
+          f"  - Call {i+1}: [Prompt Tokens: {u['prompt_tokens']}, Completion"
+          f" Tokens: {u['completion_tokens']}, Total Tokens:"
+          f" {u['total_tokens']}]"
+          f"{lat_str}"
+      )
+
+    segments_log_parts = []
+    if composite_doc and composite_doc.segments:
+      segments_log_parts.append("  Segments:")
+      for i, seg in enumerate(composite_doc.segments):
+        segments_log_parts.append(
+            f"    - Segment {i+1}: {seg.document_type} (Pages:"
+            f" {seg.start_page}-{seg.end_page})"
+        )
+    segments_str = "\n".join(segments_log_parts)
+
+    classify_log = "\n".join(classify_calls_log_parts)
+    if segments_str:
+      classify_log += f"\n{segments_str}"
+
+    standardize_calls_log_parts = []
+    standardize_token_usages = token_usages.get("standardization", [])
+    for seg in standardize_token_usages:
+      calls_str_list = []
+      for i, c in enumerate(seg["calls"]):
+        calls_str_list.append(
+            f"Call {i+1}: [Prompt Tokens: {c['prompt_tokens']}, Completion"
+            f" Tokens: {c['completion_tokens']}, Total Tokens:"
+            f" {c['total_tokens']}]"
+        )
+      calls_str = ", ".join(calls_str_list)
+      seg_latency = seg.get("latency_ms", 0.0)
+
+      step_lats = seg.get("step_latencies", {})
+      step_lats_str = ""
+      if step_lats:
+        step_lats_str = (
+            f"\n      - Extraction: {step_lats.get('extraction', 0.0):.2f}ms\n "
+            "     - Terminology Mapping:"
+            f" {step_lats.get('terminology_mapping', 0.0):.2f}ms\n      - FHIR"
+            f" Generation: {step_lats.get('fhir_generation', 0.0):.2f}ms"
+        )
+
+      standardize_calls_log_parts.append(
+          f"  - {seg['document_type']} (Pages:"
+          f" {seg['start_page']}-{seg['end_page']}): {calls_str} (Latency:"
+          f" {seg_latency:.2f}ms){step_lats_str}"
+      )
+    standardize_calls_log = "\n".join(standardize_calls_log_parts)
+
+    preprocess_latency = latencies.get("pre_processing", 0.0)
+    log_msg = (
+        "MDDAS Pipeline Metrics: "
+        f"Pages: {total_pages} | "
+        f"Total Latency: {latencies['total']:.2f}ms\n"
+        f"--- Pre-processing (Latency: {preprocess_latency:.2f}ms) ---\n"
+        "--- Classification (Total Latency:"
+        f" {latencies['classification']:.2f}ms) ---\n"
+        f"{classify_log}\n"
+        "--- Standardization (Total Latency:"
+        f" {latencies['standardization']['total']:.2f}ms) ---\n"
+        f"{standardize_calls_log}"
+    )
+    logging.info(log_msg)
+
   def standardize(
       self,
       data: bytes,
@@ -188,43 +280,104 @@ class CompositeDocumentStandardizer:
     start_total = time.perf_counter()
     latencies = {}
     token_usages = {}
+    composite_doc = None
 
-    if not (mime_type == "application/pdf" or mime_type.startswith("image/")):
+    if mime_type not in ("application/pdf", "image/png", "image/jpeg"):
       raise ValueError(
-          f"Unsupported mime_type: {mime_type}. "
-          "Supported formats are 'application/pdf' and 'image/*'."
+          f"Unsupported mime_type: {mime_type}. Supported formats are:"
+          " 'application/pdf', 'image/png', 'image/jpeg'."
       )
 
-    # 1. Classification
+    # 1. Input Pre-processing
+    start_preprocess = time.perf_counter()
+    if mime_type == "application/pdf":
+      all_pages_as_images = pdf_util.convert_pdf_pages_to_png_images(
+          data, TARGET_PDF_TO_IMAGE_DPI
+      )
+      working_mime_type = "image/png"
+    else:
+      # Assume single image content
+      all_pages_as_images = [data]
+      working_mime_type = mime_type
+
+    total_pages = len(all_pages_as_images)
+    latencies["pre_processing"] = (
+        time.perf_counter() - start_preprocess
+    ) * _MS_PER_SECOND
+
+    logging.info(
+        "Input pre-processing completed | Pages: %d | Latency: %.2fms",
+        total_pages,
+        latencies["pre_processing"],
+    )
+
+    # 2. Classification
     start_classify = time.perf_counter()
     usages_classify = []
+    classify_latencies = []
     token = token_usage_var.set(usages_classify)
+    token_lats = classifier_lib.classification_latencies_var.set(
+        classify_latencies
+    )
     try:
       composite_doc = self.classifier.classify(
-          data, temperature=0, mime_type=mime_type
+          all_pages_as_images, temperature=0, mime_type=working_mime_type
       )
       composite_doc = self.classifier.process_handwritten_medical_pages(
           composite_doc
       )
     finally:
       token_usage_var.reset(token)
+      classifier_lib.classification_latencies_var.reset(token_lats)
+      latencies["classification_calls"] = classify_latencies
 
     latencies["classification"] = (
         time.perf_counter() - start_classify
     ) * _MS_PER_SECOND
 
-    # Extract classification tokens
-    classify_prompt_tokens = sum(u.prompt_tokens for u in usages_classify)
-    classify_completion_tokens = sum(
-        u.completion_tokens for u in usages_classify
-    )
-    classify_total_tokens = sum(u.total_tokens for u in usages_classify)
+    token_usages["classification"] = [
+        {
+            "prompt_tokens": u.prompt_tokens,
+            "completion_tokens": u.completion_tokens,
+            "total_tokens": u.total_tokens,
+        }
+        for u in usages_classify
+    ]
 
-    token_usages["classification"] = {
-        "prompt_tokens": classify_prompt_tokens,
-        "completion_tokens": classify_completion_tokens,
-        "total_tokens": classify_total_tokens,
-    }
+    classify_tokens_str = "N/A"
+    if token_usages["classification"]:
+      total_prompt = sum(
+          u["prompt_tokens"] for u in token_usages["classification"]
+      )
+      total_completion = sum(
+          u["completion_tokens"] for u in token_usages["classification"]
+      )
+      classify_tokens_str = (
+          f"[Prompt: {total_prompt}, Completion: {total_completion}]"
+      )
+
+    segments_details = []
+    for i, seg in enumerate(composite_doc.segments):
+      segments_details.append(
+          f"  - Segment {i+1}: {seg.document_type} (Pages:"
+          f" {seg.start_page}-{seg.end_page})"
+      )
+    segments_str = (
+        "\n".join(segments_details)
+        if segments_details
+        else "  - No segments identified"
+    )
+
+    logging.info(
+        (
+            "Document classification completed | Segments: %d | Tokens: %s |"
+            " Latency: %.2fms\n%s"
+        ),
+        len(composite_doc.segments),
+        classify_tokens_str,
+        latencies["classification"],
+        segments_str,
+    )
 
     segments_to_process, segments_to_pass_through = self._partition_segments(
         composite_doc.segments
@@ -259,32 +412,15 @@ class CompositeDocumentStandardizer:
         )
       return standardized_composite_document
 
-    # 2. Input Pre-processing
-    start_preprocess = time.perf_counter()
-    if mime_type == "application/pdf":
-      all_pages = pdf_util.convert_pdf_pages_to_png_images(
-          data, TARGET_PDF_TO_IMAGE_DPI
-      )
-      working_mime_type = "image/png"
-    else:
-      # Assume single image content
-      all_pages = [data]
-      working_mime_type = mime_type
-
-    total_pages = len(all_pages)
-    latencies["pre_processing"] = (
-        time.perf_counter() - start_preprocess
-    ) * _MS_PER_SECOND
-
     # 3. Segment Loop (Parallelized)
     start_standardize = time.perf_counter()
     segment_latencies = []
-    usages_standardize = []
+    segment_token_usages = []
 
     with concurrent.futures.ThreadPoolExecutor(
-        max_workers=len(segments_to_process)
+        max_workers=min(3, len(segments_to_process))
     ) as executor:
-      futures = []
+      future_to_segment = {}
       for segment in segments_to_process:
         # Range Validation
         if not (1 <= segment.start_page <= segment.end_page <= total_pages):
@@ -293,47 +429,104 @@ class CompositeDocumentStandardizer:
           )
           continue
 
-        segment_images = all_pages[segment.start_page - 1 : segment.end_page]
-        futures.append(
-            executor.submit(
-                self._process_segment,
-                segment_images,
-                working_mime_type,
-                segment,
-            )
+        segment_images = all_pages_as_images[
+            segment.start_page - 1 : segment.end_page
+        ]
+        future = executor.submit(
+            self._process_segment,
+            segment_images,
+            working_mime_type,
+            segment,
         )
+        future_to_segment[future] = segment
 
-      for future in concurrent.futures.as_completed(futures):
-        standardized_document, segment_latency, segment_usages = future.result()
-        if standardized_document:
-          standardized_composite_document.add_standardized_document(
-              standardized_document
+      for future in concurrent.futures.as_completed(future_to_segment):
+        segment = future_to_segment[future]
+        try:
+          (
+              standardized_document,
+              segment_latency,
+              segment_usages,
+              step_latencies,
+          ) = future.result()
+
+          if standardized_document:
+            calls_str_list = []
+            for i, c in enumerate(segment_usages):
+              calls_str_list.append(
+                  f"Call {i+1}: [Prompt: {c.prompt_tokens}, Completion:"
+                  f" {c.completion_tokens}]"
+              )
+            calls_str = ", ".join(calls_str_list) if calls_str_list else "N/A"
+
+            step_lats_str = ""
+            if step_latencies:
+              step_lats_str = (
+                  " | Steps: [Extraction:"
+                  f" {step_latencies.get('extraction', 0.0):.2f}ms,"
+                  " Terminology:"
+                  f" {step_latencies.get('terminology_mapping', 0.0):.2f}ms,"
+                  " FHIR Gen:"
+                  f" {step_latencies.get('fhir_generation', 0.0):.2f}ms]"
+              )
+
+            logging.info(
+                (
+                    "Segment standardization completed | Type: %s | Pages:"
+                    " %d-%d | Tokens: %s | Total Segment Latency:"
+                    " %.2fms%s"
+                ),
+                standardized_document.document_type,
+                standardized_document.start_page,
+                standardized_document.end_page,
+                calls_str,
+                segment_latency,
+                step_lats_str,
+            )
+
+            standardized_composite_document.add_standardized_document(
+                standardized_document
+            )
+            segment_latencies.append({
+                "document_type": standardized_document.document_type,
+                "latency_ms": segment_latency,
+                "start_page": standardized_document.start_page,
+                "end_page": standardized_document.end_page,
+            })
+            segment_token_usages.append({
+                "document_type": standardized_document.document_type.value,
+                "start_page": standardized_document.start_page,
+                "end_page": standardized_document.end_page,
+                "latency_ms": segment_latency,
+                "step_latencies": step_latencies,
+                "calls": [
+                    {
+                        "prompt_tokens": u.prompt_tokens,
+                        "completion_tokens": u.completion_tokens,
+                        "total_tokens": u.total_tokens,
+                    }
+                    for u in segment_usages
+                ],
+            })
+        except Exception as e:
+          logging.error(
+              (
+                  "Segment standardization FAILED | Type: %s | Pages:"
+                  " %d-%d | Error: %s"
+              ),
+              segment.document_type,
+              segment.start_page,
+              segment.end_page,
+              e,
           )
-          segment_latencies.append({
-              "document_type": standardized_document.document_type,
-              "latency_ms": segment_latency,
-              "start_page": standardized_document.start_page,
-              "end_page": standardized_document.end_page,
-          })
-          usages_standardize.extend(segment_usages)
+          raise
 
     latencies["standardization"] = {
         "total": (time.perf_counter() - start_standardize) * _MS_PER_SECOND,
         "segments": segment_latencies,
     }
 
-    # Extract standardization tokens
-    standardize_prompt_tokens = sum(u.prompt_tokens for u in usages_standardize)
-    standardize_completion_tokens = sum(
-        u.completion_tokens for u in usages_standardize
-    )
-    standardize_total_tokens = sum(u.total_tokens for u in usages_standardize)
-
-    token_usages["standardization"] = {
-        "prompt_tokens": standardize_prompt_tokens,
-        "completion_tokens": standardize_completion_tokens,
-        "total_tokens": standardize_total_tokens,
-    }
+    token_usages["standardization"] = segment_token_usages
 
     standardized_composite_document.sort_documents_by_page_number()
 
@@ -359,19 +552,6 @@ class CompositeDocumentStandardizer:
     # Calculate total latency
     latencies["total"] = (time.perf_counter() - start_total) * _MS_PER_SECOND
 
-    # Calculate total tokens
-    total_prompt_tokens = classify_prompt_tokens + standardize_prompt_tokens
-    total_completion_tokens = (
-        classify_completion_tokens + standardize_completion_tokens
-    )
-    total_total_tokens = classify_total_tokens + standardize_total_tokens
-
-    token_usages["total"] = {
-        "prompt_tokens": total_prompt_tokens,
-        "completion_tokens": total_completion_tokens,
-        "total_tokens": total_total_tokens,
-    }
-
     if self.return_metadata:
       standardized_composite_document.metadata = (
           standardized_composite_medical_document.PipelineMetadata(
@@ -380,19 +560,10 @@ class CompositeDocumentStandardizer:
           )
       )
 
-    # Always log metrics for production visibility
-    logging.info(
-        (
-            "MDDAS Pipeline Metrics: Total Latency: %.2fms (Classify: %.2fms,"
-            " Standardize: %.2fms). Tokens: Total %d (Classify: %d,"
-            " Standardize: %d)."
-        ),
-        latencies["total"],
-        latencies["classification"],
-        latencies["standardization"]["total"],
-        total_total_tokens,
-        classify_total_tokens,
-        standardize_total_tokens,
-    )
+    # Log metrics for production visibility if enabled
+    if self.log_metrics:
+      self._log_pipeline_metrics(
+          total_pages, latencies, token_usages, composite_doc
+      )
 
     return standardized_composite_document

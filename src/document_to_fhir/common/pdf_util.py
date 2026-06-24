@@ -39,7 +39,6 @@ def convert_pdf_pages_to_png_images(
   Returns:
     A list of byte arrays, each representing a PNG image of a page.
   """
-
   pages_as_image_bytes = []
   # pypdfium2 sometimes goes to bad state.
   # If there are many errors, restart the session.

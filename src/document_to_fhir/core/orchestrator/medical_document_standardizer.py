@@ -13,6 +13,7 @@
 # limitations under the License.
 """Standardizes medical document images into structured data and FHIR."""
 
+import time
 from typing import Any
 
 from absl import logging
@@ -64,7 +65,7 @@ class MedicalDocumentStandardizer:
 
   def standardize(
       self, images: list[bytes], mime_type: str = "image/png"
-  ) -> tuple[resources.MedicalData, Any]:
+  ) -> tuple[resources.MedicalData, Any, dict[str, float]]:
     """Standardizes medical document images into structured data and FHIR.
 
     Args:
@@ -72,15 +73,28 @@ class MedicalDocumentStandardizer:
       mime_type: The MIME type of the images.
 
     Returns:
-      A tuple of (medical_document, fhir_bundle).
+      A tuple of (medical_document, fhir_bundle, step_latencies).
     """
     # 1. Extraction (LLM Call).
+    t0 = time.perf_counter()
     medical_document = self.extractor.extract(images, mime_type=mime_type)
+    t1 = time.perf_counter()
+    extraction_latency = (t1 - t0) * 1000
 
     # 2. Terminology Enrichment.
     enrich_terminology_recursive(medical_document, self.mapper_registry)
+    t2 = time.perf_counter()
+    terminology_latency = (t2 - t1) * 1000
 
     # 3. FHIR Generation.
     fhir_bundle = self.fhir_generator.generate_fhir(medical_document)
+    t3 = time.perf_counter()
+    fhir_latency = (t3 - t2) * 1000
 
-    return medical_document, fhir_bundle
+    step_latencies = {
+        "extraction": extraction_latency,
+        "terminology_mapping": terminology_latency,
+        "fhir_generation": fhir_latency,
+    }
+
+    return medical_document, fhir_bundle, step_latencies

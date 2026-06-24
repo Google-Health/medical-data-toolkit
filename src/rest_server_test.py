@@ -112,6 +112,43 @@ class RestServerTest(absltest.TestCase):
           pdf_bytes, mime_type='application/pdf'
       )
 
+  @unittest.mock.patch(
+      'src.rest_server.get_composite_standardizer'
+  )
+  def test_document_to_fhir_with_job_id_logging(self, mock_get_standardizer):
+    # Mock standardizer
+    mock_standardizer = unittest.mock.MagicMock()
+    mock_result = unittest.mock.MagicMock()
+    mock_result.model_dump.return_value = {'status': 'success'}
+    mock_standardizer.standardize.return_value = mock_result
+    mock_get_standardizer.return_value = mock_standardizer
+
+    # Create a valid 1 page empty pdf
+    with io.BytesIO() as out_buffer:
+      pdf = pypdfium2.PdfDocument.new()
+      pdf.new_page(612, 792)
+      pdf.save(out_buffer)
+      pdf_bytes = out_buffer.getvalue()
+
+    # We want to assert that logs printed during this request contain the job ID.
+    with self.assertLogs(level='INFO') as log_watcher:
+      response = self.client.post(
+          '/document_to_fhir',
+          data=pdf_bytes,
+          headers={'X-Job-Id': 'test-job-123'},
+      )
+      self.assertEqual(response.status_code, 200)
+
+    # Check that at least one log message contains the job ID prefix
+    has_job_id = False
+    for log in log_watcher.output:
+      if '[job=test-job-123]' in log:
+        has_job_id = True
+        break
+    self.assertTrue(
+        has_job_id, f'Job ID not found in logs: {log_watcher.output}'
+    )
+
   def test_document_to_fhir_validation_error(self):
     # Create a valid 1 page empty pdf using pypdfium2
     with io.BytesIO() as out_buffer:
@@ -237,6 +274,43 @@ class RestServerTest(absltest.TestCase):
     )
     self.assertEqual(response.status_code, 400)
     self.assertIn(b'Unsupported Content-Type: text/plain', response.data)
+
+  def test_document_to_fhir_image_unsupported_format(self):
+    with unittest.mock.patch(
+        'src.rest_server.'
+        '_is_image',
+        return_value=True,
+    ), unittest.mock.patch(
+        'PIL.Image.open',
+        side_effect=Exception('Failed to read format'),
+    ):
+      response = self.client.post('/document_to_fhir', data=b'some data')
+      self.assertEqual(response.status_code, 400)
+      self.assertIn(b'Unsupported image format.', response.data)
+
+  def test_document_to_fhir_tiff_image_no_header(self):
+    with io.BytesIO() as img_byte_arr:
+      with PIL.Image.new('RGB', (5, 5)) as img:
+        img.save(img_byte_arr, format='TIFF')
+        img_bytes = img_byte_arr.getvalue()
+
+    response = self.client.post('/document_to_fhir', data=img_bytes)
+    self.assertEqual(response.status_code, 400)
+    self.assertIn(b'Unsupported image format.', response.data)
+
+  def test_document_to_fhir_tiff_image_with_header(self):
+    with io.BytesIO() as img_byte_arr:
+      with PIL.Image.new('RGB', (5, 5)) as img:
+        img.save(img_byte_arr, format='TIFF')
+        img_bytes = img_byte_arr.getvalue()
+
+    response = self.client.post(
+        '/document_to_fhir',
+        data=img_bytes,
+        headers={'Content-Type': 'image/tiff'},
+    )
+    self.assertEqual(response.status_code, 400)
+    self.assertIn(b'Unsupported Content-Type: image/tiff', response.data)
 
   @unittest.mock.patch(
       'src.rest_server._CONFIG_FILE'
