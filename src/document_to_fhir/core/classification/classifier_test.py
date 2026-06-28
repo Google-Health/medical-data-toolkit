@@ -13,14 +13,19 @@
 # limitations under the License.
 """Tests for classifier.py."""
 
+import threading
 from unittest import mock
 
 from absl.testing import absltest
 from google.genai import types
 
+from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 from src.document_to_fhir.core.classification import classifier
+
+token_usage_var = model_client.token_usage_var
+LLMUsage = model_client.LLMUsage
 
 
 class ClassifierTest(absltest.TestCase):
@@ -101,10 +106,17 @@ class ClassifierTest(absltest.TestCase):
         ]
     )
 
-    self.mock_client.generate_content.side_effect = [
-        mock_response1,
-        mock_response2,
-    ]
+    def generate_content_side_effect(contents, **kwargs):
+      del kwargs
+      for part in contents:
+        if hasattr(part, "text") and part.text:
+          if "chunk1" in part.text:
+            return mock_response1
+          elif "chunk2" in part.text:
+            return mock_response2
+      return mock.DEFAULT
+
+    self.mock_client.generate_content.side_effect = generate_content_side_effect
     self.mock_client.supports_pdf = False
 
     c = classifier.MultiDocumentClassifier(self.mock_client)
@@ -522,12 +534,6 @@ class ClassifierTest(absltest.TestCase):
             types.Part.from_bytes(data=b"img3", mime_type="image/png"),
             types.Part.from_text(text="\n==End of Document==\n\n"),
         ],
-        [
-            types.Part.from_text(text="==Start of Document==\n"),
-            types.Part.from_text(text="==Screenshot for page 3==\n"),
-            types.Part.from_bytes(data=b"img3", mime_type="image/png"),
-            types.Part.from_text(text="\n==End of Document==\n\n"),
-        ],
     ]
 
     actual = c._chunk_images_to_parts(images, chunk_size, overlap, "image/png")
@@ -560,6 +566,139 @@ class ClassifierTest(absltest.TestCase):
         overlap=1,
     )
     self.assertEqual(actual, expected)
+
+  @mock.patch(
+      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
+  )
+  def test_multi_document_classifier_partial_failure_and_metadata(
+      self, mock_chunk
+  ):
+    mock_chunk.return_value = [
+        [types.Part.from_text(text="chunk1")],
+        [types.Part.from_text(text="chunk2")],
+    ]
+
+    mock_response1 = mock.Mock()
+    mock_response1.parsed = standardized_composite_medical_document.CompositeDocument(
+        segments=[
+            standardized_composite_medical_document.DocumentSegment(
+                document_type=document_types.MedicalDocumentType.LABORATORY_REPORT,
+                reasoning="Lab",
+                start_page=1,
+                end_page=2,
+            )
+        ]
+    )
+
+    def generate_content_side_effect(contents, **kwargs):
+      del kwargs
+      usage_list = token_usage_var.get()
+      for part in contents:
+        if hasattr(part, "text") and part.text:
+          if "chunk1" in part.text:
+            if usage_list is not None:
+              usage_list.append(
+                  LLMUsage(
+                      prompt_tokens=10, completion_tokens=5, total_tokens=15
+                  )
+              )
+            return mock_response1
+          elif "chunk2" in part.text:
+            raise ValueError("Simulated LLM Failure")
+      return mock.DEFAULT
+
+    self.mock_client.generate_content.side_effect = generate_content_side_effect
+    self.mock_client.supports_pdf = False
+
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+
+    # Set up context variables to collect metadata
+    parent_token_usages = []
+    parent_latencies = []
+    token_usage_token = token_usage_var.set(parent_token_usages)
+    latencies_token = classifier.classification_latencies_var.set(
+        parent_latencies
+    )
+
+    # Assert logs to verify chunk numbers are correct (kills mutant on chunk_num)
+    with self.assertLogs(level="INFO") as log:
+      try:
+        result = c.classify(
+            b"fake_pdf_content", split_into_chunks=True, chunk_size=2
+        )
+      finally:
+        token_usage_var.reset(token_usage_token)
+        classifier.classification_latencies_var.reset(latencies_token)
+
+    # Verify logs (kills mutant on chunk_num)
+    log_output = "\n".join(log.output)
+    self.assertIn("Processing classification chunk 1/2", log_output)
+    self.assertIn("Classification chunk 1/2 completed", log_output)
+    self.assertIn("Classification chunk 2/2 FAILED with exception", log_output)
+
+    # Verify that we got results from the successful chunk
+    self.assertLen(result.segments, 1)
+    self.assertEqual(
+        result.segments[0].document_type,
+        document_types.MedicalDocumentType.LABORATORY_REPORT,
+    )
+    self.assertEqual(result.segments[0].start_page, 1)
+    self.assertEqual(result.segments[0].end_page, 2)
+
+    # Verify that metadata was collected correctly
+    self.assertLen(parent_token_usages, 1)
+    self.assertEqual(parent_token_usages[0].prompt_tokens, 10)
+    self.assertEqual(parent_token_usages[0].completion_tokens, 5)
+    self.assertEqual(parent_token_usages[0].total_tokens, 15)
+
+    # Verify that latency is recorded
+    self.assertLen(parent_latencies, 1)
+    self.assertGreater(parent_latencies[0], 0.0)
+
+  def test_chunk_images_to_parts_scenarios(self):
+    c = classifier.MultiDocumentClassifier(self.mock_client)
+
+    # Case 1: total_pages == chunk_size
+    images = [b"img1", b"img2", b"img3", b"img4", b"img5"]
+    chunks = c._chunk_images_to_parts(
+        images=images, chunk_size=5, overlap=1, mime_type="image/png"
+    )
+    self.assertLen(chunks, 1)
+
+    # Case 2: total_pages < chunk_size
+    images = [b"img1", b"img2", b"img3"]
+    chunks = c._chunk_images_to_parts(
+        images=images, chunk_size=5, overlap=1, mime_type="image/png"
+    )
+    self.assertLen(chunks, 1)
+
+    # Case 3: total_pages > chunk_size
+    images = [
+        b"img1",
+        b"img2",
+        b"img3",
+        b"img4",
+        b"img5",
+        b"img6",
+    ]
+    chunks = c._chunk_images_to_parts(
+        images=images, chunk_size=5, overlap=1, mime_type="image/png"
+    )
+    self.assertLen(chunks, 2)
+
+    # Case 4: total_pages = 20, chunk_size = 10, overlap = 1
+    images = [b"img"] * 20
+    chunks = c._chunk_images_to_parts(
+        images=images, chunk_size=10, overlap=1, mime_type="image/png"
+    )
+    self.assertLen(chunks, 3)
+
+    # Case 5: total_pages = 19, chunk_size = 10, overlap = 1
+    images = [b"img"] * 19
+    chunks = c._chunk_images_to_parts(
+        images=images, chunk_size=10, overlap=1, mime_type="image/png"
+    )
+    self.assertLen(chunks, 2)
 
 
 if __name__ == "__main__":

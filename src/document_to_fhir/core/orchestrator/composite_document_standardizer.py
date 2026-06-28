@@ -138,7 +138,11 @@ class CompositeDocumentStandardizer:
     has_unsupported_types = len(unsupported_segments) > 0
 
     is_only_unsupported_type_non_medical = all(
-        seg.document_type == document_types.MedicalDocumentType.NON_MEDICAL
+        seg.document_type
+        in (
+            document_types.MedicalDocumentType.NON_MEDICAL,
+            document_types.MedicalDocumentType.SMART_REPORT,
+        )
         for seg in unsupported_segments
     )
 

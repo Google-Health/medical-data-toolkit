@@ -14,6 +14,7 @@
 """Medical document classification library."""
 
 import abc
+import concurrent.futures
 import contextvars
 import logging
 import os
@@ -24,7 +25,6 @@ from google.genai import types
 
 from src.document_to_fhir.common import llm_util
 from src.document_to_fhir.common import model_client
-from src.document_to_fhir.common import pdf_util
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
 
@@ -46,6 +46,9 @@ TARGET_PDF_TO_IMAGE_DPI = 300
 
 # A large chunk size to process the entire document at once.
 LARGE_CHUNK_SIZE = 999999
+
+# Maximum number of parallel workers for classification chunks
+MAX_PARALLEL_CLASSIFICATION_WORKERS = 3
 
 
 def sort_document_segments(
@@ -103,8 +106,18 @@ class DocumentClassifierBase(abc.ABC):
     total_pages = len(images)
 
     all_chunks_parts = []
-    for start in range(0, total_pages, chunk_size - overlap):
+    prev_end = 0
+    for chunk_id, start in enumerate(
+        range(0, total_pages, chunk_size - overlap)
+    ):
       end = min(start + chunk_size, total_pages)
+
+      # This is to avoid processing the last chunk if it only contains the
+      # overlap of the previous chunk.
+      if chunk_id > 0 and end <= prev_end:
+        break
+
+      prev_end = end
 
       current_chunk_parts = [
           types.Part.from_text(text="==Start of Document==\n")
@@ -288,6 +301,91 @@ class MultiDocumentClassifier(DocumentClassifierBase):
         segment.document_type = document_types.MedicalDocumentType.HANDWRITTEN
     return composite_doc
 
+  def _process_chunk(
+      self,
+      index: int,
+      contents: list[Any],
+      total_chunks: int,
+      temperature: float,
+  ) -> tuple[
+      Optional[standardized_composite_medical_document.CompositeDocument],
+      list[model_client.LLMUsage],
+      float,
+  ]:
+    """Processes a single chunk of document for classification.
+
+    This method is intended to be run in a separate thread. It sets up its own
+    local token usage tracking and measures latency.
+
+    Args:
+      index: The index of the chunk (0-indexed).
+      contents: The contents of the chunk to be sent to the LLM.
+      total_chunks: The total number of chunks.
+      temperature: The temperature for the LLM.
+
+    Returns:
+      A tuple containing:
+        - The parsed CompositeDocument (or None if failed).
+        - A list of LLMUsage objects collected during this chunk's processing.
+        - The latency of the classification call in milliseconds.
+    """
+    chunk_num = index + 1
+    logging.info(
+        "Processing classification chunk %d/%d...", chunk_num, total_chunks
+    )
+
+    local_usages = []
+    token = model_client.token_usage_var.set(local_usages)
+
+    start_time = time.perf_counter()
+    try:
+      composite_document_part = self._get_classification_response(
+          contents, temperature
+      )
+    except Exception:  # pylint: disable=broad-except
+      logging.exception(
+          "Classification chunk %d/%d FAILED with exception",
+          chunk_num,
+          total_chunks,
+      )
+      return None, [], 0.0
+    finally:
+      model_client.token_usage_var.reset(token)
+
+    latency = (time.perf_counter() - start_time) * 1000.0
+
+    usage_str = "N/A"
+    if local_usages:
+      u = local_usages[-1]
+      usage_str = (
+          f"[Prompt: {u.prompt_tokens}, Completion: {u.completion_tokens},"
+          f" Total: {u.total_tokens}]"
+      )
+
+    segments_details = []
+    if composite_document_part:
+      for i, seg in enumerate(composite_document_part.segments):
+        segments_details.append(
+            f"  - Segment {i+1}: {seg.document_type} (Pages:"
+            f" {seg.start_page}-{seg.end_page})"
+        )
+    segments_str = (
+        "\n".join(segments_details)
+        if segments_details
+        else "  - No segments identified"
+    )
+
+    logging.info(
+        "Classification chunk %d/%d completed | "
+        f"Tokens: {usage_str} | "
+        f"Latency: {latency:.2f}ms\n"
+        f"{segments_str}",
+        chunk_num,
+        total_chunks,
+    )
+
+    return composite_document_part, local_usages, latency
+
   def classify(
       self,
       data: Union[bytes, list[bytes]],
@@ -336,65 +434,49 @@ class MultiDocumentClassifier(DocumentClassifierBase):
 
     document_classification_outputs = []
     total_chunks = len(chunks_of_contents)
-
-    for index, contents in enumerate(chunks_of_contents):
-      chunk_num = index + 1
-      logging.info(
-          "Processing classification chunk %d/%d...", chunk_num, total_chunks
+    if total_chunks == 0:
+      return standardized_composite_medical_document.CompositeDocument(
+          segments=[]
       )
 
-      start_time = time.perf_counter()
-      composite_document_part = self._get_classification_response(
-          contents, temperature
-      )
-      latency = (time.perf_counter() - start_time) * 1000.0
+    parent_latencies_list = classification_latencies_var.get()
+    parent_token_usages = model_client.token_usage_var.get()
 
-      latencies_list = classification_latencies_var.get()
-      if latencies_list is not None:
-        latencies_list.append(latency)
-
-      if composite_document_part is None:
-        logging.error(
-            "Classification chunk %d/%d FAILED (returned None)",
-            chunk_num,
+    futures = []
+    # Create an inline thread pool with max_workers capped at the constant
+    max_workers = min(total_chunks, MAX_PARALLEL_CLASSIFICATION_WORKERS)
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+      for index, contents in enumerate(chunks_of_contents):
+        ctx = contextvars.copy_context()
+        future = executor.submit(
+            ctx.run,
+            self._process_chunk,
+            index,
+            contents,
             total_chunks,
+            temperature,
         )
-        continue
+        futures.append(future)
 
-      # Get tokens for this specific call from the contextvar
-      usages = model_client.token_usage_var.get()
-      usage_str = "N/A"
-      if usages:
-        u = usages[-1]
-        usage_str = (
-            f"[Prompt: {u.prompt_tokens}, Completion: {u.completion_tokens},"
-            f" Total: {u.total_tokens}]"
-        )
+      for future in futures:
+        try:
+          composite_document_part, local_usages, latency = future.result()
+        except Exception:  # pylint: disable=broad-except
+          logging.exception("Failed to get result from future")
+          continue
 
-      segments_details = []
-      for i, seg in enumerate(composite_document_part.segments):
-        segments_details.append(
-            f"  - Segment {i+1}: {seg.document_type} (Pages:"
-            f" {seg.start_page}-{seg.end_page})"
-        )
-      segments_str = (
-          "\n".join(segments_details)
-          if segments_details
-          else "  - No segments identified"
-      )
+        if composite_document_part is not None:
+          document_classification_outputs.append(
+              sort_document_segments(composite_document_part)
+          )
 
-      logging.info(
-          "Classification chunk %d/%d completed | "
-          f"Tokens: {usage_str} | "
-          f"Latency: {latency:.2f}ms\n"
-          f"{segments_str}",
-          chunk_num,
-          total_chunks,
-      )
-
-      document_classification_outputs.append(
-          sort_document_segments(composite_document_part)
-      )
+        # Merge the thread's results back into the parent's context-based lists
+        if parent_latencies_list is not None and latency > 0.0:
+          parent_latencies_list.append(latency)
+        if parent_token_usages is not None and local_usages:
+          parent_token_usages.extend(local_usages)
 
     if not document_classification_outputs:
       return standardized_composite_medical_document.CompositeDocument(

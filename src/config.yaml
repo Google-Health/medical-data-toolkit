@@ -47,7 +47,7 @@ supported_types:
 
 # Policy for validating documents with unsupported types.
 # ACCEPT_ALL: Accepts the document regardless of unsupported types.
-# ALLOW_UNSUPPORTED_NON_MEDICAL: Process only supported segments if unsupported types are only non-medical (OTHER).
+# ALLOW_UNSUPPORTED_NON_MEDICAL: Process only supported segments if unsupported types are non-medical or smart reports.
 # ALLOW_ONLY_SUPPORTED: Discard the document if any unsupported type is present.
 document_standardization_policy: ACCEPT_ALL
 

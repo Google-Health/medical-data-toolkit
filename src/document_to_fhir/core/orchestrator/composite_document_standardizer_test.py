@@ -503,6 +503,217 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
         f" {log_watcher.output}",
     )
 
+  def test_partition_segments_accept_all_with_all_supported(self):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+            document_standardization_policy=(
+                document_types.DocumentStandardizationPolicy.ACCEPT_ALL
+            ),
+        )
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [])
+
+  def test_partition_segments_accept_all_with_unsupported_mix(self):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    # self.standardizers only has LABORATORY_REPORT, so PRESCRIPTION is
+    # unsupported
+    standardizer = (
+        composite_document_standardizer.CompositeDocumentStandardizer(
+            classifier=self.mock_classifier,
+            standardizers=self.standardizers,
+            document_standardization_policy=(
+                document_types.DocumentStandardizationPolicy.ACCEPT_ALL
+            ),
+        )
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [mock_seg_presc])
+
+  def test_partition_segments_allow_only_supported_with_all_supported(self):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_ONLY_SUPPORTED
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [])
+
+  def test_partition_segments_allow_only_supported_with_unsupported_mix(self):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_ONLY_SUPPORTED
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(to_pass_through, [mock_seg_lab, mock_seg_presc])
+
+  def test_partition_segments_allow_only_supported_with_non_medical(self):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_non_med = mock.Mock(
+        document_type=document_types.MedicalDocumentType.NON_MEDICAL
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_ONLY_SUPPORTED
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_non_med]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(to_pass_through, [mock_seg_lab, mock_seg_non_med])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_non_medical(
+      self,
+  ):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_non_med = mock.Mock(
+        document_type=document_types.MedicalDocumentType.NON_MEDICAL
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_non_med]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [mock_seg_non_med])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_smart_report(
+      self,
+  ):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_smart_report = mock.Mock(
+        document_type=document_types.MedicalDocumentType.SMART_REPORT
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_smart_report]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [mock_seg_smart_report])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_medical_unsupported(
+      self,
+  ):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(to_pass_through, [mock_seg_lab, mock_seg_presc])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_non_medical_and_medical_non_lab(
+      self,
+  ):
+    mock_seg_non_med = mock.Mock(
+        document_type=document_types.MedicalDocumentType.NON_MEDICAL
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_non_med, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(to_pass_through, [mock_seg_non_med, mock_seg_presc])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_smart_report_and_medical_non_lab(
+      self,
+  ):
+    mock_seg_smart_report = mock.Mock(
+        document_type=document_types.MedicalDocumentType.SMART_REPORT
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_smart_report, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(to_pass_through, [mock_seg_smart_report, mock_seg_presc])
+
 
 if __name__ == "__main__":
   absltest.main()
