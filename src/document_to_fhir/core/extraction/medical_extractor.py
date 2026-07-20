@@ -58,7 +58,7 @@ class MedicalExtractor(abc.ABC):
     request_contents = [
         types.Part.from_bytes(data=img, mime_type=mime_type) for img in images
     ]
-    request_contents.append(self.prompt)
+    request_contents.append(self.prompt)  # pyrefly: ignore[bad-argument-type]
 
     def post_process_extractor(parsed_json):
       if isinstance(parsed_json, list) and len(parsed_json) == 1:
@@ -69,7 +69,7 @@ class MedicalExtractor(abc.ABC):
       return parsed_json
 
     response = self.client.generate_content(
-        contents=request_contents,
+        contents=request_contents,  # pyrefly: ignore[bad-argument-type]
         schema=self.schema,
         config={
             "response_mime_type": "application/json",

@@ -37,8 +37,7 @@ RUN apt-get update && \
 
 COPY ./src /src
 
-RUN pip install --upgrade pip && \
-  pip install --no-deps --ignore-requires-python --require-hashes -r requirements.txt && \
+RUN pip install --no-deps --ignore-requires-python --require-hashes -r requirements.txt && \
   python3 -m compileall -b / && \
   # Set permissions for all files and directories in /src to be readable by non-root user.
   find /src -type d -exec chmod 755 {} \; && \

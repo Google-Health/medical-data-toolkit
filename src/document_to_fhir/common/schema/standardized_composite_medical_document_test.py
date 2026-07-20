@@ -165,7 +165,7 @@ class StandardizedCompositeMedicalDocumentTest(absltest.TestCase):
         data
     )
     # Verify that the invalid datetime is cleared.
-    self.assertIsNone(doc.medical_document.sample_collection_time)
+    self.assertIsNone(doc.medical_document.sample_collection_time)  # pyrefly: ignore[missing-attribute]
 
 
 if __name__ == "__main__":

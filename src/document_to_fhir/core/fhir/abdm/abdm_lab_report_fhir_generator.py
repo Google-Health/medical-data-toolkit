@@ -233,9 +233,9 @@ class AbdmLabReportFhirGenerator(fhir_generator.IFhirGenerator):
         encounter,
     ]
     if practitioner:
-      ordered_resources.insert(2, practitioner)
+      ordered_resources.insert(2, practitioner)  # pyrefly: ignore[bad-argument-type]
     if organization:
-      ordered_resources.insert(3, organization)
+      ordered_resources.insert(3, organization)  # pyrefly: ignore[bad-argument-type]
     ordered_resources.extend(resources_to_bundle)
 
     return self._create_bundle(ordered_resources)
@@ -300,8 +300,8 @@ def _group_tests_by_panel(
       panel_data = panels[panel_name]
 
       if panel_data["name"] is None:
-        panel_data["name"] = panel_name
-        panel_data["loinc"] = test.panel_loinc_code
+        panel_data["name"] = panel_name  # pyrefly: ignore[bad-assignment]
+        panel_data["loinc"] = test.panel_loinc_code  # pyrefly: ignore[bad-assignment]
       elif (
           test.panel_loinc_code and panel_data["loinc"] != test.panel_loinc_code
       ):

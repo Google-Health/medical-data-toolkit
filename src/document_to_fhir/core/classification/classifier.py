@@ -275,7 +275,7 @@ class MultiDocumentClassifier(DocumentClassifierBase):
         segments=merged_classified_output
     )
 
-  def process_handwritten_medical_pages(
+  def process_handwritten_medical_pages(  # pyrefly: ignore[bad-override]
       self,
       composite_doc: standardized_composite_medical_document.CompositeDocument,
       handwritten_percent_threshold: int = 33,
@@ -386,7 +386,7 @@ class MultiDocumentClassifier(DocumentClassifierBase):
 
     return composite_document_part, local_usages, latency
 
-  def classify(
+  def classify(  # pyrefly: ignore[bad-override]
       self,
       data: Union[bytes, list[bytes]],
       prompt: str | None = None,

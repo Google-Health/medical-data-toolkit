@@ -130,7 +130,7 @@ class StandardizedCompositeMedicalDocumentWithContext(pydantic.BaseModel):
   @property
   def n_pages(self) -> int:
     return sum([
-        doc.end_page - doc.start_page + 1
+        doc.end_page - doc.start_page + 1  # pyrefly: ignore[unsupported-operation]
         for doc in self.standardized_medical_documents
     ])
 

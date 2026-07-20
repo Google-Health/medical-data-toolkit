@@ -97,7 +97,7 @@ def main(argv):
     llm_client = model_client.create_llm_client(
         client_type=_CLIENT_TYPE.value,
         model_name=_MODEL_NAME.value,
-        api_key=_API_KEY.value,
+        api_key=_API_KEY.value,  # pyrefly: ignore[bad-argument-type]
     )
   except ValueError as e:
     raise app.UsageError(str(e)) from e

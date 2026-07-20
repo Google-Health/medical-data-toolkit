@@ -132,15 +132,15 @@ class GenAIClientBase(LLMClient):
       merged_config["response_schema"] = schema
 
     raw_response = self.client.models.generate_content(
-        model=self.model, contents=contents, config=merged_config
+        model=self.model, contents=contents, config=merged_config  # pyrefly: ignore[bad-argument-type]
     )
 
     usage = None
     if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
       usage = LLMUsage(
-          prompt_tokens=raw_response.usage_metadata.prompt_token_count,
-          completion_tokens=raw_response.usage_metadata.candidates_token_count,
-          total_tokens=raw_response.usage_metadata.total_token_count,
+          prompt_tokens=raw_response.usage_metadata.prompt_token_count,  # pyrefly: ignore[bad-argument-type]
+          completion_tokens=raw_response.usage_metadata.candidates_token_count,  # pyrefly: ignore[bad-argument-type]
+          total_tokens=raw_response.usage_metadata.total_token_count,  # pyrefly: ignore[bad-argument-type]
       )
 
     if usage:
@@ -149,7 +149,7 @@ class GenAIClientBase(LLMClient):
         usage_list.append(usage)
 
     return MockResponse(
-        text=raw_response.text,
+        text=raw_response.text,  # pyrefly: ignore[bad-argument-type]
         parsed=raw_response.parsed,
         usage=usage,
     )
@@ -412,7 +412,7 @@ class LiteLLMClient(LLMClient):
           user_content.append({"type": "text", "text": part.text})
         elif part.inline_data:
           data = part.inline_data.data
-          base64_data = base64.b64encode(data).decode("utf-8")
+          base64_data = base64.b64encode(data).decode("utf-8")  # pyrefly: ignore[bad-argument-type]
           user_content.append({
               "type": "image_url",
               "image_url": {

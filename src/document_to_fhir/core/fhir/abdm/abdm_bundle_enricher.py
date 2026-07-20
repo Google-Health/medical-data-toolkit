@@ -72,7 +72,7 @@ def add_document_reference_to_lab_report(
   doc_ref_id = str(uuid.uuid4())
   doc_ref_proto = resource_converter.create_document_reference(
       doc_ref_id=doc_ref_id,
-      patient_ref=patient_ref,
+      patient_ref=patient_ref,  # pyrefly: ignore[bad-argument-type]
       mime_type=mime_type,
       encoded_data=encoded_data,
       creation_time=datetime.datetime.now(datetime.timezone.utc),

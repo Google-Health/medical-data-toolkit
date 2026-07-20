@@ -381,25 +381,25 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.assertLen(result.metadata.latency_ms["standardization"]["segments"], 1)
 
     # Verify tokens
-    self.assertLen(result.metadata.token_usage["classification"], 1)
+    self.assertLen(result.metadata.token_usage["classification"], 1)  # pyrefly: ignore[unsupported-operation]
     self.assertEqual(
-        result.metadata.token_usage["classification"][0]["total_tokens"], 15
+        result.metadata.token_usage["classification"][0]["total_tokens"], 15  # pyrefly: ignore[unsupported-operation]
     )
-    self.assertLen(result.metadata.token_usage["standardization"], 1)
+    self.assertLen(result.metadata.token_usage["standardization"], 1)  # pyrefly: ignore[unsupported-operation]
     self.assertEqual(
-        result.metadata.token_usage["standardization"][0]["document_type"],
+        result.metadata.token_usage["standardization"][0]["document_type"],  # pyrefly: ignore[unsupported-operation]
         document_types.MedicalDocumentType.LABORATORY_REPORT.value,
     )
     self.assertLen(
-        result.metadata.token_usage["standardization"][0]["calls"], 1
+        result.metadata.token_usage["standardization"][0]["calls"], 1  # pyrefly: ignore[unsupported-operation]
     )
     self.assertEqual(
-        result.metadata.token_usage["standardization"][0]["calls"][0][
+        result.metadata.token_usage["standardization"][0]["calls"][0][  # pyrefly: ignore[unsupported-operation]
             "total_tokens"
         ],
         30,
     )
-    self.assertNotIn("total", result.metadata.token_usage)
+    self.assertNotIn("total", result.metadata.token_usage)  # pyrefly: ignore[bad-argument-type]
 
   def test_standardize_unsupported_mime_type_raises_value_error(self):
     standardizer = (

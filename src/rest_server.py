@@ -420,12 +420,12 @@ class GunicornApplication(gunicorn.app.base.BaseApplication):
 
   def load_config(self):
     num_workers = os.cpu_count() or 1
-    self.cfg.set('worker_class', 'gthread')
-    self.cfg.set('workers', str(num_workers))
-    self.cfg.set('threads', '5')
-    self.cfg.set('bind', 'unix:/tmp/gunicorn.sock')
-    self.cfg.set('accesslog', '-')
-    self.cfg.set(
+    self.cfg.set('worker_class', 'gthread')  # pyrefly: ignore[missing-attribute]
+    self.cfg.set('workers', str(num_workers))  # pyrefly: ignore[missing-attribute]
+    self.cfg.set('threads', '5')  # pyrefly: ignore[missing-attribute]
+    self.cfg.set('bind', 'unix:/tmp/gunicorn.sock')  # pyrefly: ignore[missing-attribute]
+    self.cfg.set('accesslog', '-')  # pyrefly: ignore[missing-attribute]
+    self.cfg.set(  # pyrefly: ignore[missing-attribute]
         'access_log_format', '%(u)s "%(r)s" %(s)s "%(f)s" "%({body}i)s"'
     )
 
@@ -544,8 +544,8 @@ def _create_standardizer_map(
 
     standardizer = medical_document_standardizer.MedicalDocumentStandardizer(
         extractor=extractor,
-        mapper_registry=mapper_registry,
-        fhir_generator=fhir_generator,
+        mapper_registry=mapper_registry,  # pyrefly: ignore[bad-argument-type]
+        fhir_generator=fhir_generator,  # pyrefly: ignore[bad-argument-type]
     )
     standardizer_map[doc_type] = standardizer
 
