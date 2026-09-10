@@ -21,6 +21,7 @@ import json
 import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Union
+
 from google import genai
 import google.auth
 import google.auth.transport.requests
@@ -31,9 +32,9 @@ import pydantic
 import requests
 import tenacity
 
-token_usage_var: contextvars.ContextVar[
-    Optional[List["LLMUsage"]]
-] = contextvars.ContextVar("token_usage", default=None)
+token_usage_var: contextvars.ContextVar[Optional[List["LLMUsage"]]] = (
+    contextvars.ContextVar("token_usage", default=None)
+)
 
 
 Request = google.auth.transport.requests.Request
@@ -44,8 +45,6 @@ _THOUGHT_PATTERN = re.compile(
 
 class ResponseParsingError(Exception):
   """Raised when LLM response cannot be parsed or validated."""
-
-  pass
 
 
 class LLMClient(abc.ABC):
@@ -58,7 +57,6 @@ class LLMClient(abc.ABC):
   @abc.abstractmethod
   def supports_pdf(self) -> bool:
     """Returns True if the LLM client supports PDF input."""
-    pass
 
   @abc.abstractmethod
   def generate_content(

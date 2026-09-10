@@ -15,12 +15,16 @@
 
 import datetime
 import decimal
+import logging
 
 from google.fhir.r4.proto.core import codes_pb2
 from google.fhir.r4.proto.core import datatypes_pb2
+from google.fhir.r4.proto.core import valuesets_pb2
 from google.fhir.r4.proto.core.resources import diagnostic_report_pb2
 from google.fhir.r4.proto.core.resources import document_reference_pb2
 from google.fhir.r4.proto.core.resources import encounter_pb2
+from google.fhir.r4.proto.core.resources import immunization_pb2
+from google.fhir.r4.proto.core.resources import medication_request_pb2
 from google.fhir.r4.proto.core.resources import observation_pb2
 from google.fhir.r4.proto.core.resources import organization_pb2
 from google.fhir.r4.proto.core.resources import patient_pb2
@@ -165,7 +169,6 @@ def create_organization(
               )
           ]
       ),
-      active=datatypes_pb2.Boolean(value=True),
   )
   if organization.name:
     org_fhir.name.value = organization.name
@@ -492,6 +495,119 @@ def create_diagnostic_report(
   return report
 
 
+def create_imaging_diagnostic_report(
+    report_id: str,
+    patient_uri_ref: str,
+    practitioner_ref: str | None,
+    organization_ref: str | None,
+    encounter_uri_ref: str | None,
+    effective_dt: datatypes_pb2.DateTime | None,
+    exam_name: str,
+    modality: str | None = None,
+    findings: str | None = None,
+    conclusion: str | None = None,
+    conclusion_code: str | None = None,
+    modality_subtype: str | None = None,
+    procedure_loinc_code: str | None = None,
+    procedure_loinc_common_name: str | None = None,
+) -> diagnostic_report_pb2.DiagnosticReport:
+  """Creates a FHIR DiagnosticReport resource for Imaging."""
+  codeable_concept = datatypes_pb2.CodeableConcept()
+  if procedure_loinc_code:
+    coding = codeable_concept.coding.add(
+        system=datatypes_pb2.Uri(value="http://loinc.org"),
+        code=datatypes_pb2.Code(value=procedure_loinc_code),
+    )
+    display_name = procedure_loinc_common_name or exam_name
+    if display_name:
+      coding.display.value = display_name
+  text_value = exam_name or procedure_loinc_common_name
+  if text_value:
+    codeable_concept.text.value = text_value
+
+  encounter_reference = None
+  if encounter_uri_ref:
+    encounter_reference = datatypes_pb2.Reference()
+    encounter_reference.uri.value = encounter_uri_ref
+
+  issued_precision = datatypes_pb2.Instant.SECOND
+  if effective_dt:
+    if effective_dt.precision == datatypes_pb2.DateTime.MICROSECOND:
+      issued_precision = datatypes_pb2.Instant.MICROSECOND
+    elif effective_dt.precision == datatypes_pb2.DateTime.MILLISECOND:
+      issued_precision = datatypes_pb2.Instant.MILLISECOND
+
+  category_concept = datatypes_pb2.CodeableConcept(
+      coding=[
+          datatypes_pb2.Coding(
+              system=datatypes_pb2.Uri(value="http://snomed.info/sct"),
+              code=datatypes_pb2.Code(value="721981007"),
+              display=datatypes_pb2.String(value="Diagnostic studies report"),
+          )
+      ]
+  )
+  # Modality and modality_subtype are combined to store in category.text.
+  modality_parts = [m for m in (modality, modality_subtype) if m]
+  if modality_parts:
+    category_concept.text.value = " ".join(modality_parts)
+
+  categories = [category_concept]
+
+  report = diagnostic_report_pb2.DiagnosticReport(
+      id=datatypes_pb2.Id(value=report_id),
+      meta=datatypes_pb2.Meta(
+          profile=[
+              datatypes_pb2.Canonical(
+                  value="https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportImaging"
+              )
+          ]
+      ),
+      status=diagnostic_report_pb2.DiagnosticReport.StatusCode(
+          value=codes_pb2.DiagnosticReportStatusCode.FINAL
+      ),
+      category=categories,
+      code=codeable_concept,
+  )
+  if effective_dt:
+    report.effective.date_time.CopyFrom(effective_dt)
+    report.issued.value_us = effective_dt.value_us
+    report.issued.timezone = effective_dt.timezone
+    report.issued.precision = issued_precision
+  report.subject.uri.value = patient_uri_ref
+  if encounter_reference:
+    report.encounter.CopyFrom(encounter_reference)
+  if practitioner_ref:
+    report.results_interpreter.add().uri.value = practitioner_ref
+    report.performer.add().uri.value = practitioner_ref
+  if organization_ref:
+    report.performer.add().uri.value = organization_ref
+
+  conclusions = []
+  if findings:
+    conclusions.append(f"Findings: {findings}")
+  if conclusion:
+    conclusions.append(f"Conclusion: {conclusion}")
+
+  if conclusions:
+    report.conclusion.value = "\n".join(conclusions)
+  else:
+    report.conclusion.value = "NA"
+
+  if conclusion_code:
+    display_val = conclusion if conclusion else "Coded Conclusion"
+    report.conclusion_code.add(
+        coding=[
+            datatypes_pb2.Coding(
+                system=datatypes_pb2.Uri(value="http://snomed.info/sct"),
+                code=datatypes_pb2.Code(value=conclusion_code),
+                display=datatypes_pb2.String(value=display_val),
+            )
+        ]
+    )
+
+  return report
+
+
 def create_document_reference(
     doc_ref_id: str,
     patient_ref: str,
@@ -543,3 +659,169 @@ def create_document_reference(
   )
 
   return doc_ref
+
+
+def create_medication_request(
+    medication: resources.Medication | None,
+    medication_request_id: str,
+    patient_uri_ref: str,
+    practitioner_uri_ref: str | None = None,
+    authored_on_date: datetime.datetime | None = None,
+    encounter_uri_ref: str | None = None,
+) -> medication_request_pb2.MedicationRequest:
+  """Creates a FHIR MedicationRequest resource from a Medication object."""
+  if not medication:
+    raise ValueError("Medication cannot be None")
+  med_req = medication_request_pb2.MedicationRequest(
+      id=datatypes_pb2.Id(value=medication_request_id),
+      meta=datatypes_pb2.Meta(
+          profile=[
+              datatypes_pb2.Canonical(
+                  value="https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+              )
+          ]
+      ),
+      status=medication_request_pb2.MedicationRequest.StatusCode(
+          value=codes_pb2.MedicationrequestStatusCode.ACTIVE
+      ),
+      intent=medication_request_pb2.MedicationRequest.IntentCode(
+          value=codes_pb2.MedicationRequestIntentCode.ORDER
+      ),
+  )
+  med_req.subject.uri.value = patient_uri_ref
+  if practitioner_uri_ref:
+    med_req.requester.uri.value = practitioner_uri_ref
+  if authored_on_date:
+    med_req.authored_on.CopyFrom(fhir_utils.to_fhir_datetime(authored_on_date))
+  elif medication.start_date:
+    start_dt = datetime.datetime.combine(
+        medication.start_date, datetime.time.min
+    ).replace(tzinfo=datetime.timezone.utc)
+    med_req.authored_on.CopyFrom(fhir_utils.to_fhir_datetime(start_dt))
+
+  if encounter_uri_ref:
+    med_req.encounter.uri.value = encounter_uri_ref
+
+  if medication.medication_code and medication.medication_code_name:
+    med_req.medication.codeable_concept.coding.add(
+        system=datatypes_pb2.Uri(value="http://snomed.info/sct"),
+        code=datatypes_pb2.Code(value=medication.medication_code),
+        display=datatypes_pb2.String(value=medication.medication_code_name),
+    )
+    med_req.medication.codeable_concept.text.value = (
+        medication.medication_code_name
+    )
+  elif medication.name:
+    med_req.medication.codeable_concept.text.value = medication.name
+
+  if medication.dosage_instructions:
+    instruction = medication.dosage_instructions
+    dosage = med_req.dosage_instruction.add()
+    dosage_text_parts = []
+    if instruction.dose_value is not None and instruction.dose_unit:
+      dosage_text_parts.append(
+          f"{instruction.dose_value} {instruction.dose_unit}"
+      )
+    if medication.route:
+      dosage_text_parts.append(medication.route)
+      dosage.route.text.value = medication.route
+    if instruction.frequency is not None:
+      if (
+          instruction.frequency_period is not None
+          and instruction.frequency_period_unit
+      ):
+        dosage_text_parts.append(
+            f"{instruction.frequency} times per"
+            f" {instruction.frequency_period}"
+            f" {instruction.frequency_period_unit}"
+        )
+      elif instruction.frequency_period_unit:
+        dosage_text_parts.append(
+            f"{instruction.frequency} times per"
+            f" {instruction.frequency_period_unit}"
+        )
+    if dosage_text_parts:
+      dosage.text.value = " ".join(dosage_text_parts)
+    if instruction.instruction:
+      dosage.patient_instruction.value = instruction.instruction
+  elif medication.route:
+    dosage = med_req.dosage_instruction.add()
+    dosage.route.text.value = medication.route
+    dosage.text.value = medication.route
+
+  return med_req
+
+
+def create_immunization(
+    immunization: resources.Immunization | None,
+    immunization_id: str,
+    patient_uri_ref: str,
+    practitioner_uri_ref: str | None = None,
+    occurrence_date: datetime.date | datetime.datetime | None = None,
+    encounter_uri_ref: str | None = None,
+    primary_source: bool = False,
+) -> immunization_pb2.Immunization:
+  """Creates a FHIR Immunization resource from an Immunization object."""
+  if not immunization:
+    raise ValueError("Immunization cannot be None")
+
+  imm = immunization_pb2.Immunization(
+      id=datatypes_pb2.Id(value=immunization_id),
+      meta=datatypes_pb2.Meta(
+          profile=[
+              datatypes_pb2.Canonical(
+                  value=(
+                      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Immunization"
+                  )
+              )
+          ]
+      ),
+      status=immunization_pb2.Immunization.StatusCode(
+          value=valuesets_pb2.ImmunizationStatusCodesValueSet.COMPLETED
+      ),
+      primary_source=datatypes_pb2.Boolean(value=primary_source),
+  )
+  imm.patient.uri.value = patient_uri_ref
+
+  if practitioner_uri_ref:
+    performer = imm.performer.add()
+    performer.actor.uri.value = practitioner_uri_ref
+    performer.function.coding.add(
+        system=datatypes_pb2.Uri(
+            value="http://terminology.hl7.org/CodeSystem/v2-0443"
+        ),
+        code=datatypes_pb2.Code(value="AP"),
+        display=datatypes_pb2.String(value="Administering Provider"),
+    )
+
+  if occurrence_date:
+    if isinstance(occurrence_date, datetime.datetime):
+      occ_dt = occurrence_date
+      if occ_dt.tzinfo is None:
+        occ_dt = occ_dt.replace(tzinfo=datetime.timezone.utc)
+      imm.occurrence.date_time.CopyFrom(fhir_utils.to_fhir_datetime(occ_dt))
+    else:
+      dt = datetime.datetime.combine(
+          occurrence_date, datetime.time.min
+      ).replace(tzinfo=datetime.timezone.utc)
+      imm.occurrence.date_time.CopyFrom(fhir_utils.to_fhir_datetime(dt))
+  elif immunization.date:
+    dt = datetime.datetime.combine(
+        immunization.date, datetime.time.min
+    ).replace(tzinfo=datetime.timezone.utc)
+    imm.occurrence.date_time.CopyFrom(fhir_utils.to_fhir_datetime(dt))
+
+  if encounter_uri_ref:
+    imm.encounter.uri.value = encounter_uri_ref
+
+  if immunization.vaccine_code and immunization.vaccine_name:
+    imm.vaccine_code.coding.add(
+        system=datatypes_pb2.Uri(value="http://snomed.info/sct"),
+        code=datatypes_pb2.Code(value=immunization.vaccine_code),
+        display=datatypes_pb2.String(value=immunization.vaccine_name),
+    )
+    imm.vaccine_code.text.value = immunization.vaccine_name
+  elif immunization.vaccine_name:
+    imm.vaccine_code.text.value = immunization.vaccine_name
+
+  return imm

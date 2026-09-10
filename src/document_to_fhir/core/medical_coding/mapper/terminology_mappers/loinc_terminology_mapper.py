@@ -13,24 +13,48 @@
 # limitations under the License.
 """Terminology mapper for LOINC codes."""
 
+from src.document_to_fhir.common.schema import medical_documents
 from src.document_to_fhir.common.schema import resources
-from src.document_to_fhir.core.medical_coding.loinc import query
+from src.document_to_fhir.core.medical_coding.loinc.laboratory import query as lab_query
+from src.document_to_fhir.core.medical_coding.loinc.radiology import query as rsna_query
 from src.document_to_fhir.core.medical_coding.mapper import terminology_mapper
 
 
 class LoincTerminologyMapper(terminology_mapper.ITerminologyMapper):
-  """Maps lab tests to LOINC codes using a LoincQueryEngine."""
+  """Maps lab tests and radiology reports to LOINC codes."""
 
-  def __init__(self, query_engine: query.LoincQueryEngine):
-    self.query_engine = query_engine
+  def __init__(
+      self,
+      lab_query_engine: lab_query.LaboratoryLoincQueryEngine,
+      radiology_query_engine: rsna_query.RsnaPlaybookQueryEngine,
+  ):
+    self.lab_query_engine = lab_query_engine
+    self.radiology_query_engine = radiology_query_engine
 
-  def map_inplace(self, test: resources.LabTest):
-    if test.loinc_code:
-      return
-    results = self.query_engine.query(test)
-    if results:
-      test.loinc_code = results[0].loinc_num
-      test.loinc_common_name = results[0].long_common_name
-    else:
-      test.loinc_code = None
-      test.loinc_common_name = None
+  def map_inplace(self, model: resources.MedicalData) -> None:
+    """Maps LOINC codes in-place on the provided medical data model."""
+    if isinstance(model, resources.LabTest):
+      self.map_lab_test(model)
+    elif isinstance(model, medical_documents.LabReport):
+      self.map_lab_report(model)
+    elif isinstance(model, medical_documents.RadiologyReport):
+      self.map_radiology_report(model)
+
+  def map_lab_report(self, report: medical_documents.LabReport) -> None:
+    """Maps LOINC codes in-place for all lab tests within a LabReport."""
+    if report.lab_tests:
+      for lab_test in report.lab_tests:
+        self.map_lab_test(lab_test)
+
+  def map_lab_test(self, lab_test: resources.LabTest) -> None:
+    """Maps LOINC code in-place on a single LabTest."""
+    rows = self.lab_query_engine.query(lab_test)
+    if rows:
+      lab_test.loinc_code = rows[0].loinc_num
+      lab_test.loinc_common_name = rows[0].long_common_name
+
+  def map_radiology_report(
+      self, report: medical_documents.RadiologyReport
+  ) -> None:
+    """Maps procedure LOINC code in-place on a RadiologyReport."""
+    self.radiology_query_engine.map_report(report)

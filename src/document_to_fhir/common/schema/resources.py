@@ -20,11 +20,41 @@ documents, such as patients, practitioners, lab tests, and organizations.
 import datetime
 import enum
 import logging
+import re
 import typing
 from typing import Annotated, Any, Generic, Optional, TypeVar, Union
 
 import pydantic
 from pydantic import json_schema
+
+
+def normalize_unit(unit_str: str) -> str:
+  """Normalizes informal/non-standard unit strings to standard SI/UCUM representations."""
+  if not unit_str:
+    return unit_str
+
+  unit = unit_str.strip().lower()
+
+  # Common unit mappings in prescriptions
+  # Using (?<=\d|\b) instead of \b at start to handle squashed units like "50mg"
+  mappings = [
+      (r'(?<=\d)(gm(s)?|gram(s)?)\b|\b(gm(s)?|gram(s)?)\b', 'g'),
+      (r'(?<=\d)(milligram(s)?)\b|\b(milligram(s)?)\b', 'mg'),
+      (r'(?<=\d)(milliliter(s)?|ml(s)?)\b|\b(milliliter(s)?|ml(s)?)\b', 'ml'),
+      (r'(?<=\d)(mcg|microgram(s)?)\b|\b(mcg|microgram(s)?)\b', 'mcg'),
+      (r'(?<=\d)(tab(s)?|tablet(s)?)\b|\b(tab(s)?|tablet(s)?)\b', 'tablet'),
+      (r'(?<=\d)(cap(s)?|capsule(s)?)\b|\b(cap(s)?|capsule(s)?)\b', 'capsule'),
+      (r'(?<=\d)inj(ection(s)?)?\b|\binj(ection(s)?)?\b', 'injection'),
+      (r'(?<=\d)(i\.?u\.?|units?)(?!\w)|\b(i\.?u\.?|units?)(?!\w)', 'iu'),
+      (r'(?<=\d)(percent(age)?|pct)\b|\b(percent(age)?|pct)\b', '%'),
+      (r'(?<=\d)(w\/v)\b|\b(w\/v)\b', 'w/v'),
+      (r'(?<=\d)(v\/v)\b|\b(v\/v)\b', 'v/v'),
+  ]
+
+  for pattern, replacement in mappings:
+    unit = re.sub(pattern, replacement, unit, flags=re.IGNORECASE)
+
+  return unit
 
 
 class MedicalData(pydantic.BaseModel):
@@ -67,7 +97,13 @@ class MedicalData(pydantic.BaseModel):
                   # validate it in a sub-try.
                   datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
                 else:
-                  datetime.date.fromisoformat(value)
+                  try:
+                    datetime.date.fromisoformat(value)
+                  except ValueError:
+                    parsed_dt = datetime.datetime.fromisoformat(
+                        value.replace('Z', '+00:00')
+                    )
+                    data[field_name] = parsed_dt.date().isoformat()
               except (ValueError, TypeError):
                 logging.warning(
                     'Clearing invalid %s for optional field %s: %s',
@@ -201,14 +237,7 @@ class LabTest(MedicalData):
   """Individual tests within a lab report."""
 
   core_analyte: str = pydantic.Field(
-      description=(
-          """The unique physiological entity or chemical substance measured, independent of specimen, method, or timing.
-          Use Standard Scientific Capitalization (e.g., "HbA1c", "pH", "d-Dimer", "Free T4").
-          Exclude specimen types (e.g., "Blood", "Serum"), methods (e.g., "PCR"), and generic nouns (e.g., "Level", "Count").
-          DISAMBIGUATION: For names with slashes ("/"), keep the slash ONLY if it represents a mathematical ratio
-          (e.g., "Albumin/Creatinine"); if it implies synonyms or subtypes, extract the specific scientific name
-          (e.g., "PCV/Hematocrit" -> "Hematocrit", "Protein/Albumin" -> "Albumin")."""
-      ),
+      description='Core Analyte as described in the prompt.',
   )
   name: str = pydantic.Field(description='The formal name of the lab test.')
   result: str = pydantic.Field(
@@ -335,3 +364,273 @@ class Organization(MedicalData, Generic[OrganizationIdentifiersT]):
   contact: Optional[Contact] = pydantic.Field(
       default=None, description='Contact information of the organization.'
   )
+
+
+class PatientType(str, enum.Enum):
+  """Represents the age bracket of the patient."""
+  ADULT = 'ADULT'
+  PAEDIATRIC = 'PAEDIATRIC'
+  UNKNOWN = 'UNKNOWN'
+
+
+class Immunization(MedicalData):
+  """Represents an individual immunization."""
+
+  # Setting dosage to Optional[str] causes it to be omitted even when the value
+  # is present in the prompt. Hence, it is kept as a mandatory field and a
+  # validator is used to set it to "unknown" if not specified. Keeping
+  # 'dosage' as the first field is very useful because it directs the model to
+  # decouple the dosage from the vaccine name when they are present together in
+  # the record, e.g. 'Hep A1' where '1' indicates the dosage.
+  dosage: str = pydantic.Field(
+      description=(
+          'Type of dosage e.g. 1, 2, booster etc. Use numbers or'
+          ' "booster". Set to "unknown" if not specified.'
+      ),
+  )
+  vaccine_name: str = pydantic.Field(
+      description=(
+          'Standardized name of the vaccine without dosage specified. In the'
+          ' event that there is a choice of vaccine variations, pick the first'
+          ' one. For example, Hep A1 should be extracted as Hep A.'
+      )
+  )
+  date: Optional[datetime.date] = pydantic.Field(
+      default=None,
+      description=(
+          'Date of vaccine administration, often labeled as'
+          " 'Date Given', 'Given On', 'Administered On', 'Date of"
+          " Administration', or 'Vaccination Date'. Do not confuse with"
+          " 'Due Date', 'Next Due Date', or vaccine expiration date."
+      ),
+  )
+  patient_type: PatientType = pydantic.Field(
+      default=PatientType.UNKNOWN,
+      description=(
+          'Type of patient based on age when the vaccine was administered. If'
+          ' the patient age is 18 or above, classify as ADULT. If the patient'
+          ' age is less than 18, classify as PAEDIATRIC. If the age is not'
+          ' available, classify as UNKNOWN.'
+      ),
+  )
+  vaccine_code: Annotated[Optional[str], json_schema.SkipJsonSchema()] = (
+      pydantic.Field(default=None, description='SNOMED-CT Code of the vaccine.')
+  )
+  vaccine_code_name: Annotated[Optional[str], json_schema.SkipJsonSchema()] = (
+      pydantic.Field(
+          default=None,
+          description='Name of the vaccine in the SNOMED-CT code system.',
+      )
+  )
+
+  @pydantic.model_validator(mode='before')
+  @classmethod
+  def set_default_dosage(cls, data: Any) -> Any:
+    if isinstance(data, dict):
+      if not data.get('dosage'):
+        data = dict(data)
+        data['dosage'] = 'unknown'
+    return data
+
+
+class Dosage(MedicalData):
+  """Represents dosage instructions for a medication."""
+
+  instruction: Optional[str] = pydantic.Field(
+      default=None,
+      description='Timing or condition for dosage (e.g., "in the morning").',
+  )
+  dose_value: Optional[float] = pydantic.Field(
+      default=None, description='Amount of dose.'
+  )
+  dose_unit: Optional[str] = pydantic.Field(
+      default=None, description='Unit for dose amount (e.g., "ml", "TAB).'
+  )
+  frequency: Optional[int] = pydantic.Field(
+      default=None,
+      description=(
+          'The number of times the medication should be taken per period.'
+      ),
+  )
+  frequency_period: Optional[float] = pydantic.Field(
+      default=None,
+      description=(
+          'The period over which the medication should be taken `frequency`'
+          ' times.'
+      ),
+  )
+  frequency_period_unit: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'The unit for `frequency_period` (e.g., "day", "week", "month").'
+      ),
+  )
+  as_needed: Optional[bool] = pydantic.Field(
+      default=None,
+      description=(
+          'Boolean flag indicating if the medication should be taken on an "as'
+          ' needed" basis, inferred from dosage instructions.'
+      ),
+  )
+  as_needed_for: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'The reason for taking the medication, to be used only when'
+          ' as_needed is true (e.g., "for pain", "for nausea").'
+      ),
+  )
+
+  # When dose_value is not specified, we assume dose_value prescribed is 1.
+  # This todo is not open sourced as this falls in the copybara remove block.
+  # TODO: Clinical review if this is safe to assume.
+  @pydantic.field_validator('dose_value', mode='before')
+  @classmethod
+  def replace_none_with_default(cls, v):
+    if v is None:
+      return 1
+    return v
+
+
+# TODO: Add name_type enum field with values ["GENERIC", "BRAND", "SALT_FORM",
+# "OTHER"]. for clinical coding purposes.
+# TODO: Update medicine_form instruction to exclude route information.
+# TODO: Separate fields for strength_value and strength_unit will be better for
+# clinical coding.
+class Medication(MedicalData):
+  """Represents a prescribed or administered medication."""
+
+  name: Annotated[str, json_schema.SkipJsonSchema()] = pydantic.Field(
+      default=None, description='Full name of the medication.'
+  )
+  medicine_form: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Form as a complete word without abbreviations (e.g., "tablet",'
+          ' "capsule", "syrup", "drop" etc.).'
+      ),
+  )
+  brand_name: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Brand name ONLY. Exclude strength (e.g. 500mg), form (e.g. tablet,'
+          ' syrup etc.), and active substances.'
+      ),
+  )
+  active_substances: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Active ingredients extracted VERBATIM without strengths or form. DO'
+          ' NOT add unwritten salt names or modify the names in any way. Join'
+          ' multiple items strictly using'
+          ' " + ".'
+      ),
+  )
+  strength: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Strength (e.g. "500mcg", "500mg + 125mg", "1g", "5ml" etc.). Join'
+          ' multiples with " + ".'
+      ),
+  )
+  medication_code: Annotated[Optional[str], json_schema.SkipJsonSchema()] = (
+      pydantic.Field(default=None, description='SNOMED code of the medication.')
+  )
+  medication_code_name: Annotated[
+      Optional[str], json_schema.SkipJsonSchema()
+  ] = pydantic.Field(
+      default=None, description='Name of the medication as per SNOMED.'
+  )
+  dosage_instructions: Optional[Dosage] = pydantic.Field(
+      default=None, description='Dosage instructions for the medication.'
+  )
+  route: Optional[str] = pydantic.Field(
+      default=None,
+      description='Route of administration (e.g., "oral", "intravenous").',
+  )
+  start_date: Optional[datetime.date] = pydantic.Field(
+      default=None,
+      description=(
+          'Start date of the medication course, often labeled as'
+          " 'Start Date' or 'From'. If not explicitly specified,"
+          ' use the prescription date.'
+      ),
+  )
+  quantity_value: Optional[float] = pydantic.Field(
+      default=None,
+      description=(
+          'The numeric value of the quantity of medication prescribed or'
+          ' dispensed.'
+      ),
+  )
+  quantity_unit: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'The unit of measurement for the quantity (e.g., "TAB", "mL").'
+      ),
+  )
+
+  @pydantic.field_validator('brand_name', mode='before')
+  @classmethod
+  def sanitize_brand_name(cls, v: Optional[str]) -> Optional[str]:
+    """Strips pharmaceutical form terms and leftover unit noise from brand names."""
+    if not v:
+      return v
+
+    # Common Indian prescription form keywords & abbreviations
+    form_keywords = (
+        r'\b('
+        r'tab|tabs|tablet|tablets|'
+        r'cap|caps|capsule|capsules|'
+        r'syp|syrup|syr|'
+        r'inj|injection|'
+        r'oint|ointment|crm|cream|gel|'
+        r'drop|drops|drp|'
+        r'soln|solution|susp|suspension|'
+        r'respule|respules|rotacap|rotacaps|inhaler'
+        r')\b'
+    )
+
+    # 1. Remove form words (case-insensitive)
+    v = re.sub(form_keywords, '', v, flags=re.IGNORECASE)
+
+    # 2. Clean up extra punctuation, trailing hyphens, and whitespace
+    v = re.sub(r'[\,\.\/\-]+', ' ', v)
+    v = ' '.join(v.split())
+
+    return v
+
+  @pydantic.field_validator('active_substances', mode='before')
+  @classmethod
+  def sanitize_active_substances(cls, v: Optional[str]) -> Optional[str]:
+    if not v:
+      return v
+    v = re.sub(r'[\|\/]', ' + ', v)
+    v = re.sub(
+        r'\b\d+(\.\d+)?\s*(mg|g|ml|mcg|i\.?u\.?)\b', '', v, flags=re.IGNORECASE
+    )
+    return ' + '.join([part.strip() for part in v.split('+') if part.strip()])
+
+  @pydantic.field_validator('strength', mode='before')
+  @classmethod
+  def sanitize_strength(cls, v: Optional[str]) -> Optional[str]:
+    if not v:
+      return v
+    return normalize_unit(v)
+
+  def model_post_init(self, context: Any) -> None:
+    """Constructs full name using base_name, strength, and medicine_form."""
+    if self.name:
+      return
+    parts = []
+    if self.brand_name:
+      parts.append(self.brand_name)
+    if self.active_substances:
+      if parts:
+        parts.append(f'({self.active_substances})')
+      else:
+        parts.append(self.active_substances)
+    if self.strength:
+      parts.append(self.strength)
+    if self.medicine_form:
+      parts.append(self.medicine_form)
+    self.name = ' '.join(parts)

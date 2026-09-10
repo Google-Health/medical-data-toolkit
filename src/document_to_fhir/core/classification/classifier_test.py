@@ -13,12 +13,12 @@
 # limitations under the License.
 """Tests for classifier.py."""
 
-import threading
 from unittest import mock
 
 from absl.testing import absltest
 from google.genai import types
 
+from src.document_to_fhir.common import file_util
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
@@ -35,11 +35,21 @@ class ClassifierTest(absltest.TestCase):
     self.mock_client = mock.Mock()
     self.mock_client.supports_pdf = True
 
-  @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.read_prompt"
-  )
-  @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
+  @mock.patch.object(file_util, "read_prompt", autospec=True, spec_set=True)
+  def test_load_prompt(self, mock_read_prompt):
+    mock_read_prompt.return_value = "test prompt"
+
+    result = classifier.read_prompt("suggested_prompts/test.jinja2")
+
+    self.assertEqual(result, "test prompt")
+    mock_read_prompt.assert_called_once_with("suggested_prompts/test.jinja2")
+
+  @mock.patch.object(classifier, "read_prompt", autospec=True, spec_set=True)
+  @mock.patch.object(
+      classifier.DocumentClassifierBase,
+      "_chunk_images_to_parts",
+      autospec=True,
+      spec_set=True,
   )
   def test_multi_document_classifier_no_chunks(
       self, mock_chunk, mock_load_prompt
@@ -73,8 +83,11 @@ class ClassifierTest(absltest.TestCase):
         types.Part.from_text(text="EXPECTED_MULTI_PROMPT"), kwargs["contents"]
     )
 
-  @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
+  @mock.patch.object(
+      classifier.DocumentClassifierBase,
+      "_chunk_images_to_parts",
+      autospec=True,
+      spec_set=True,
   )
   def test_multi_document_classifier_with_chunks(self, mock_chunk):
     mock_chunk.return_value = [
@@ -567,8 +580,11 @@ class ClassifierTest(absltest.TestCase):
     )
     self.assertEqual(actual, expected)
 
-  @mock.patch(
-      "src.document_to_fhir.core.classification.classifier.DocumentClassifierBase._chunk_images_to_parts"
+  @mock.patch.object(
+      classifier.DocumentClassifierBase,
+      "_chunk_images_to_parts",
+      autospec=True,
+      spec_set=True,
   )
   def test_multi_document_classifier_partial_failure_and_metadata(
       self, mock_chunk

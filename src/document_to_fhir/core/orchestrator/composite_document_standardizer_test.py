@@ -259,7 +259,7 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     )
 
   @mock.patch(
-      "src.document_to_fhir.core.fhir.abdm.abdm_bundle_enricher.add_document_reference_to_lab_report"
+      "src.document_to_fhir.core.fhir.abdm.abdm_bundle_enricher.add_document_reference_to_bundle"
   )
   @mock.patch(
       "src.document_to_fhir.core.orchestrator.composite_document_standardizer.json_format.print_fhir_to_json_string"

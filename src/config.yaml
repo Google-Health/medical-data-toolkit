@@ -72,3 +72,16 @@ RETURN_METADATA: false
 loinc_analaytes_index_csv_path: "/data/analyte_records_top_2000.csv"
 loinc_system_kb_csv_path: "/data/loinc_axis_system_kb_top_2000.csv"
 loinc_property_kb_csv_path: "/data/loinc_axis_property_kb_top_2000.csv"
+loinc_rsna_playbook_index_csv_path: "/data/rsna_playbook_index.csv"
+
+# Paths to the files containing SNOMED Drug Knowledge Base data.
+snomed_drug_brand_kb_path: "/data/snomed/drug/BrandMaster.txt"
+snomed_drug_generic_kb_path: "/data/snomed/drug/GenericMaster.txt"
+snomed_drug_substance_kb_path: "/data/snomed/drug/SubstanceMaster.txt"
+snomed_drug_product_kb_path: "/data/snomed/drug/ProductMaster.txt"
+snomed_drug_substance_variations_path: "/data/snomed/drug/SubstanceVariations.txt"
+snomed_drug_form_kb_path: "/data/snomed/drug/DrugFormMaster.txt"
+snomed_drug_route_kb_path: "/data/snomed/drug/RouteOfAdministrationMaster.txt"
+
+# Paths to the files containing SNOMED Vaccine Knowledge Base data.
+snomed_vaccine_kb_path: "/data/snomed/vaccine/SnomedVaccineIndex.tsv"

@@ -13,6 +13,7 @@
 # limitations under the License.
 """Helper for enriching FHIR bundles with additional resources."""
 
+import dataclasses
 import datetime
 import json
 from typing import Any
@@ -23,10 +24,40 @@ from google.fhir.r4 import json_format
 from src.document_to_fhir.core.fhir.abdm import abdm_fhir_resource_converter as resource_converter
 
 
-def add_document_reference_to_lab_report(
+@dataclasses.dataclass(frozen=True)
+class _DocumentReferenceMetadata:
+  """Metadata for creating a DocumentReference for a supported profile."""
+
+  type_code: str
+  type_display: str
+
+
+_SUPPORTED_COMPOSITION_PROFILES: dict[str, _DocumentReferenceMetadata] = {
+    "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord": (
+        _DocumentReferenceMetadata(
+            type_code="721981007",
+            type_display="Diagnostic studies report",
+        )
+    ),
+    "https://nrces.in/ndhm/fhir/r4/StructureDefinition/PrescriptionRecord": (
+        _DocumentReferenceMetadata(
+            type_code="440545006",
+            type_display="Prescription record",
+        )
+    ),
+    "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ImmunizationRecord": (
+        _DocumentReferenceMetadata(
+            type_code="41000179103",
+            type_display="Immunization record",
+        )
+    ),
+}
+
+
+def add_document_reference_to_bundle(
     fhir_bundle: dict[str, Any] | None, encoded_data: str, mime_type: str
 ) -> tuple[dict[str, Any] | None, bool]:
-  """Converts fhir_bundle to proto, adds DocumentReference if it's a Lab Report.
+  """Converts fhir_bundle to proto, adds DocumentReference if it's a supported ABDM document record.
 
   Args:
     fhir_bundle: The FHIR bundle as a dictionary.
@@ -46,20 +77,23 @@ def add_document_reference_to_lab_report(
       bundle_json_str, bundle_and_contained_resource_pb2.Bundle
   )
 
-  # 2. Check if it is a Lab Report from ABDM generator
-  is_lab_report = False
-  if bundle_proto.entry and bundle_proto.entry[0].resource.HasField(
-      "composition"
+  # 2. Check if it is a supported document profile from ABDM generator
+  if not (
+      bundle_proto.entry
+      and bundle_proto.entry[0].resource.HasField("composition")
   ):
-    comp = bundle_proto.entry[0].resource.composition
-    if any(
-        p.value
-        == "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord"
-        for p in comp.meta.profile
-    ):
-      is_lab_report = True
+    return fhir_bundle, False
 
-  if not is_lab_report:
+  comp = bundle_proto.entry[0].resource.composition
+  composition_profiles = [p.value for p in comp.meta.profile]
+
+  matched_profile_meta = None
+  for p in composition_profiles:
+    if p in _SUPPORTED_COMPOSITION_PROFILES:
+      matched_profile_meta = _SUPPORTED_COMPOSITION_PROFILES[p]
+      break
+
+  if not matched_profile_meta:
     return fhir_bundle, False
 
   # 3. Find patient reference
@@ -69,15 +103,18 @@ def add_document_reference_to_lab_report(
       patient_ref = entry.full_url.value
       break
 
+  if not patient_ref:
+    return fhir_bundle, False
+
   doc_ref_id = str(uuid.uuid4())
   doc_ref_proto = resource_converter.create_document_reference(
       doc_ref_id=doc_ref_id,
-      patient_ref=patient_ref,  # pyrefly: ignore[bad-argument-type]
+      patient_ref=patient_ref,
       mime_type=mime_type,
       encoded_data=encoded_data,
       creation_time=datetime.datetime.now(datetime.timezone.utc),
-      type_code="4241000179101",
-      type_display="Laboratory report",
+      type_code=matched_profile_meta.type_code,
+      type_display=matched_profile_meta.type_display,
       type_system="http://snomed.info/sct",
   )
 
@@ -87,7 +124,6 @@ def add_document_reference_to_lab_report(
   entry.resource.document_reference.CopyFrom(doc_ref_proto)
 
   # 5. Link in Composition if exists
-  comp = bundle_proto.entry[0].resource.composition
   if comp.section:
     section = comp.section[0]
     new_entry = section.entry.add()

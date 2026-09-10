@@ -23,11 +23,11 @@ from typing import Any, Optional, Union
 
 from google.genai import types
 
+from src.document_to_fhir.common import file_util
 from src.document_to_fhir.common import llm_util
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common.schema import document_types
 from src.document_to_fhir.common.schema import standardized_composite_medical_document
-
 
 # Context variable to store individual classification call latencies.
 classification_latencies_var: contextvars.ContextVar[Optional[list[float]]] = (
@@ -37,8 +37,7 @@ classification_latencies_var: contextvars.ContextVar[Optional[list[float]]] = (
 
 def read_prompt(prompt_path: str) -> str:
   """Reads the prompt from the given path."""
-  with open(prompt_path, "rt") as f:
-    return f.read().strip()
+  return file_util.read_prompt(prompt_path)
 
 
 # Standard DPI for PDF to Image conversion
@@ -85,7 +84,6 @@ class DocumentClassifierBase(abc.ABC):
       **kwargs,
   ) -> standardized_composite_medical_document.CompositeDocument:
     """Classifies a medical document."""
-    pass
 
   @abc.abstractmethod
   def process_handwritten_medical_pages(
@@ -94,7 +92,6 @@ class DocumentClassifierBase(abc.ABC):
       **kwargs,
   ) -> standardized_composite_medical_document.CompositeDocument:
     """Marks segments as handwritten if they meet the threshold."""
-    pass
 
   def _chunk_images_to_parts(
       self, images: list[bytes], chunk_size: int, overlap: int, mime_type: str

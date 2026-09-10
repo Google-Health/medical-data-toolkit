@@ -191,7 +191,6 @@
               "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
             ]
           },
-          "active": true,
           "name": "General Hospital",
           "identifier": [
             {

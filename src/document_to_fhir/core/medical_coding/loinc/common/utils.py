@@ -17,8 +17,22 @@ import collections
 import json
 import logging
 import re
+from typing import Any
 
 import pandas
+
+from src.document_to_fhir.common import file_util
+
+file_exists = file_util.file_exists
+open_file = file_util.open_file
+read_text_file = file_util.read_text_file
+read_prompt = file_util.read_prompt
+
+
+def read_csv(filepath: str, **kwargs: Any) -> pandas.DataFrame:
+  """Reads a CSV into a pandas DataFrame using central open_file."""
+  with open_file(filepath, "r") as f:
+    return pandas.read_csv(f, **kwargs)
 
 
 class StringUtils:
@@ -62,40 +76,53 @@ class StringUtils:
 
 
 def read_loinc_kb(
-    file_path: str, max_rank: int, limit: int = 0
+    file_path: str,
+    max_rank: int,
+    limit: int = 0,
+    additional_loinc_codes: list[str] | None = None,
 ) -> pandas.DataFrame:
   """Reads the LOINC knowledge base from a CSV file.
 
   The function reads the LOINC data from the provided file path.
-  It filters the DataFrame to include only rows with 'CLASSTYPE' in [1, 2]
-  and 'COMMON_TEST_RANK' greater than 0 and less than or equal to `max_rank`.
-  Optionally, it limits the number of rows based on `limit`.
+  It filters the DataFrame to include only rows with 'CLASSTYPE' in [1, 2].
+  If `additional_loinc_codes` is provided, it processes codes up to max_rank
+  AND the specific codes in the file (union).
 
   Args:
     file_path: Path to the LOINC CSV file.
     max_rank: The maximum value of COMMON_TEST_RANK to include.
     limit: If > 0, the maximum number of rows to return.
+    additional_loinc_codes: Optional list of additional LOINC codes to include
+      irrespective of the max_rank.
 
   Returns:
-    A pandas DataFrame containing the filtered LOINC data, or None if the
-    file is not found.
+    A pandas DataFrame containing the filtered LOINC data.
   """
-  df_loinc = pandas.read_csv(file_path, low_memory=False, encoding="utf-8-sig")
+  df_loinc = read_csv(file_path, low_memory=False, encoding="utf-8-sig")
 
-  if (
-      df_loinc is not None
-      and "CLASSTYPE" in df_loinc.columns
-      and "COMMON_TEST_RANK" in df_loinc.columns
-  ):
+  if "CLASSTYPE" in df_loinc.columns:
     df_loinc = df_loinc[df_loinc["CLASSTYPE"].isin([1, 2])]
-    df_loinc = df_loinc[
-        pandas.to_numeric(df_loinc["COMMON_TEST_RANK"], errors="coerce") > 0
-    ]
-    df_loinc = df_loinc[
-        pandas.to_numeric(df_loinc["COMMON_TEST_RANK"], errors="coerce")
-        <= max_rank
-    ]
-    if limit > 0 and len(df_loinc) > limit:
-      df_loinc = df_loinc.head(limit)
+
+  if "LOINC_NUM" in df_loinc.columns:
+    df_loinc = df_loinc.drop_duplicates(subset=["LOINC_NUM"])
+
+  rank_mask = pandas.Series(False, index=df_loinc.index)
+  if "COMMON_TEST_RANK" in df_loinc.columns:
+    common_test_rank = pandas.to_numeric(
+        df_loinc["COMMON_TEST_RANK"], errors="coerce"
+    )
+    rank_mask = (common_test_rank.fillna(0) > 0) & (
+        common_test_rank.fillna(float("inf")) <= max_rank
+    )
+
+  if additional_loinc_codes is not None:
+    code_mask = df_loinc["LOINC_NUM"].isin(additional_loinc_codes)
+    df_loinc = df_loinc[rank_mask | code_mask]
+  elif "COMMON_TEST_RANK" in df_loinc.columns:
+    df_loinc = df_loinc[rank_mask]
+
+  if limit > 0 and len(df_loinc) > limit:
+    df_loinc = df_loinc.head(limit)
+
   logging.info("Read %d LOINC rows.", len(df_loinc))
   return df_loinc

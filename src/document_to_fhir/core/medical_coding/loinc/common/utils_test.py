@@ -11,9 +11,48 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 from absl.testing import absltest
 
 from src.document_to_fhir.core.medical_coding.loinc.common import utils
+
+
+class FileUtilsTest(absltest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.temp_dir = self.create_tempdir()
+
+  def test_open_file_and_file_exists(self):
+    test_path = os.path.join(self.temp_dir.full_path, "sample.txt")
+    self.assertFalse(utils.file_exists(test_path))
+
+    with utils.open_file(test_path, "w") as f:
+      f.write("hello world\n")
+
+    self.assertTrue(utils.file_exists(test_path))
+    with utils.open_file(test_path, "r") as f:
+      content = f.read()
+    self.assertEqual(content, "hello world\n")
+
+  def test_read_text_file_and_read_prompt(self):
+    prompt_path = os.path.join(self.temp_dir.full_path, "prompt.txt")
+    with utils.open_file(prompt_path, "w") as f:
+      f.write("  prompt instructions \n")
+
+    self.assertEqual(utils.read_text_file(prompt_path), "prompt instructions")
+    self.assertEqual(utils.read_prompt(prompt_path), "prompt instructions")
+
+  def test_read_csv(self):
+    csv_path = os.path.join(self.temp_dir.full_path, "data.csv")
+    with utils.open_file(csv_path, "w") as f:
+      f.write("colA,colB\nval1,val2\n")
+
+    df = utils.read_csv(csv_path)
+    self.assertEqual(list(df.columns), ["colA", "colB"])
+    self.assertLen(df, 1)
+    self.assertEqual(df.iloc[0]["colA"], "val1")
 
 
 class StringUtilsTest(absltest.TestCase):

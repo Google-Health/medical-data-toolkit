@@ -89,6 +89,12 @@ class StandardizedMedicalDocumentWithContext(pydantic.BaseModel):
       match doc_type:
         case document_types.MedicalDocumentType.LABORATORY_REPORT:
           model_class = medical_documents.LabReport
+        case document_types.MedicalDocumentType.RADIOLOGY_REPORT:
+          model_class = medical_documents.RadiologyReport
+        case document_types.MedicalDocumentType.PRESCRIPTION:
+          model_class = medical_documents.Prescription
+        case document_types.MedicalDocumentType.IMMUNIZATION:
+          model_class = medical_documents.ImmunizationRecord
         case _:
           model_class = None
 

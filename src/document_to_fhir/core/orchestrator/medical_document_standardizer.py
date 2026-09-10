@@ -34,6 +34,8 @@ def enrich_terminology_recursive(
   """Walks the Pydantic tree to apply terminology mapping."""
   if model is None:
     return
+  if mapper_registry is None:
+    return
   if isinstance(model, resources.MedicalData):
     mapper = mapper_registry.get(type(model))
     if mapper:
@@ -54,10 +56,13 @@ class MedicalDocumentStandardizer:
   def __init__(
       self,
       extractor: medical_extractor.MedicalExtractor,
-      mapper_registry: dict[
-          type[resources.MedicalData], terminology_mapper.ITerminologyMapper
-      ],
-      fhir_generator: fhir_generator_lib.IFhirGenerator,
+      mapper_registry: (
+          dict[
+              type[resources.MedicalData], terminology_mapper.ITerminologyMapper
+          ]
+          | None
+      ) = None,
+      fhir_generator: fhir_generator_lib.IFhirGenerator | None = None,
   ):
     self.extractor = extractor
     self.mapper_registry = mapper_registry
@@ -82,14 +87,24 @@ class MedicalDocumentStandardizer:
     extraction_latency = (t1 - t0) * 1000
 
     # 2. Terminology Enrichment.
-    enrich_terminology_recursive(medical_document, self.mapper_registry)
-    t2 = time.perf_counter()
-    terminology_latency = (t2 - t1) * 1000
+    if self.mapper_registry:
+      enrich_terminology_recursive(medical_document, self.mapper_registry)
+      t2 = time.perf_counter()
+      terminology_latency = (t2 - t1) * 1000
+    else:
+      logging.info("Skipping terminology mapping as mapper_registry is None.")
+      t2 = t1
+      terminology_latency = 0.0
 
     # 3. FHIR Generation.
-    fhir_bundle = self.fhir_generator.generate_fhir(medical_document)
-    t3 = time.perf_counter()
-    fhir_latency = (t3 - t2) * 1000
+    if self.fhir_generator:
+      fhir_bundle = self.fhir_generator.generate_fhir(medical_document)
+      t3 = time.perf_counter()
+      fhir_latency = (t3 - t2) * 1000
+    else:
+      logging.info("Skipping FHIR generation as fhir_generator is None.")
+      fhir_bundle = None
+      fhir_latency = 0.0
 
     step_latencies = {
         "extraction": extraction_latency,

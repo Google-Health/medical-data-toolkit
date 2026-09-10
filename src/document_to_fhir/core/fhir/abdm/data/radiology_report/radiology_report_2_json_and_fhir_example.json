@@ -1,0 +1,231 @@
+{
+  "raw_json": {
+    "study_date": "2026-01-01T10:00:00",
+    "patient": {
+      "name": "John Doe",
+      "identifiers": {
+        "mr": "MR123"
+      },
+      "dob": null,
+      "gender": "male"
+    },
+    "service_provider": {
+      "name": "General Hospital",
+      "identifiers": {
+        "prn": "PRN123"
+      },
+      "address": null,
+      "contact": null
+    },
+    "practitioner": null,
+    "modality_type": "CT",
+    "exam_name": "CT Brain",
+    "findings": "No abnormalities detected.",
+    "conclusion": "Normal CT Brain.",
+    "conclusion_code": "123456"
+  },
+  "fhir_json": {
+    "resourceType": "Bundle",
+    "id": "f006cc52-51bc-48d4-8029-14aa3a08f9a0",
+    "meta": {
+      "versionId": "1",
+      "profile": [
+        "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+      ]
+    },
+    "identifier": {
+      "system": "http://hip.in",
+      "value": "f006cc52-51bc-48d4-8029-14aa3a08f9a0"
+    },
+    "type": "document",
+    "timestamp": "2026-07-01T12:14:54Z",
+    "entry": [
+      {
+        "fullUrl": "urn:uuid:dce30a60-87cf-46bd-ba7d-f0debb4c7172",
+        "resource": {
+          "resourceType": "Composition",
+          "id": "dce30a60-87cf-46bd-ba7d-f0debb4c7172",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord"
+            ]
+          },
+          "status": "final",
+          "type": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "721981007",
+                "display": "Diagnostic studies report"
+              }
+            ]
+          },
+          "subject": {
+            "reference": "urn:uuid:60d4f9a1-cf6a-44bf-b087-449759f20b16"
+          },
+          "date": "2026-01-01T18:00:00Z",
+          "author": [
+            {
+              "reference": "urn:uuid:42f76a73-dca3-4e2b-ae3a-818dc4d41c57"
+            }
+          ],
+          "title": "Diagnostic Report Record",
+          "section": [
+            {
+              "title": "Diagnostic Report",
+              "entry": [
+                {
+                  "type": "DiagnosticReport",
+                  "reference": "urn:uuid:bbd5abb4-6ca8-424c-95b1-9061732787e8"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:60d4f9a1-cf6a-44bf-b087-449759f20b16",
+        "resource": {
+          "resourceType": "Patient",
+          "id": "60d4f9a1-cf6a-44bf-b087-449759f20b16",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "MR",
+                    "display": "Medical Record Number"
+                  }
+                ]
+              },
+              "system": "http://hospital.smarthealthit.org",
+              "value": "MR123"
+            }
+          ],
+          "name": [
+            {
+              "text": "John Doe",
+              "family": "Doe",
+              "given": ["John"]
+            }
+          ],
+          "gender": "male"
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:b8bcd516-c624-4a6e-b429-3401f1d9b896",
+        "resource": {
+          "resourceType": "Encounter",
+          "id": "b8bcd516-c624-4a6e-b429-3401f1d9b896",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+            ]
+          },
+          "status": "finished",
+          "class": {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            "code": "AMB",
+            "display": "ambulatory"
+          },
+          "subject": {
+            "reference": "urn:uuid:60d4f9a1-cf6a-44bf-b087-449759f20b16"
+          },
+          "period": {
+            "start": "2026-01-01T18:00:00Z"
+          },
+          "serviceProvider": {
+            "reference": "urn:uuid:42f76a73-dca3-4e2b-ae3a-818dc4d41c57"
+          }
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:42f76a73-dca3-4e2b-ae3a-818dc4d41c57",
+        "resource": {
+          "resourceType": "Organization",
+          "id": "42f76a73-dca3-4e2b-ae3a-818dc4d41c57",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "PRN",
+                    "display": "Provider number"
+                  }
+                ]
+              },
+              "system": "https://facility.ndhm.gov.in",
+              "value": "PRN123"
+            }
+          ],
+          "name": "General Hospital"
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:bbd5abb4-6ca8-424c-95b1-9061732787e8",
+        "resource": {
+          "resourceType": "DiagnosticReport",
+          "id": "bbd5abb4-6ca8-424c-95b1-9061732787e8",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportImaging"
+            ]
+          },
+          "status": "final",
+          "category": [
+            {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "721981007",
+                  "display": "Diagnostic studies report"
+                }
+              ],
+              "text": "CT"
+            }
+          ],
+          "code": {
+            "text": "CT Brain"
+          },
+          "subject": {
+            "reference": "urn:uuid:60d4f9a1-cf6a-44bf-b087-449759f20b16"
+          },
+          "encounter": {
+            "reference": "urn:uuid:b8bcd516-c624-4a6e-b429-3401f1d9b896"
+          },
+          "effectiveDateTime": "2026-01-01T18:00:00Z",
+          "issued": "2026-01-01T18:00:00Z",
+          "performer": [
+            {
+              "reference": "urn:uuid:42f76a73-dca3-4e2b-ae3a-818dc4d41c57"
+            }
+          ],
+          "conclusion": "Findings: No abnormalities detected.\nConclusion: Normal CT Brain.",
+          "conclusionCode": [
+            {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "123456",
+                  "display": "Normal CT Brain."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

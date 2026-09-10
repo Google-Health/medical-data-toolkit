@@ -1,0 +1,287 @@
+{
+  "description": "ABDM Immunization Example 1 - Complete",
+  "raw_json": {
+    "patient": {
+      "name": "John Doe",
+      "identifiers": {
+        "mr": "MR123"
+      },
+      "dob": "1980-01-15",
+      "gender": "male"
+    },
+    "practitioner": {
+      "name": "Dr. Smith",
+      "identifiers": {
+        "md": "MD123"
+      }
+    },
+    "service_provider": {
+      "name": "General Hospital",
+      "identifiers": {
+        "prn": "PRN123"
+      }
+    },
+    "immunizations": [
+      {
+        "vaccine_name": "Covaxin",
+        "vaccine_code": "1119349007",
+        "date": "2026-01-01"
+      }
+    ]
+  },
+  "fhir_json": {
+    "resourceType": "Bundle",
+    "id": "d40404b8-553c-4a69-8b62-7d2e995678a1",
+    "identifier": {
+      "system": "http://hip.in",
+      "value": "d40404b8-553c-4a69-8b62-7d2e995678a1"
+    },
+    "type": "document",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "meta": {
+      "profile": [
+        "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+      ],
+      "versionId": "1"
+    },
+    "entry": [
+      {
+        "fullUrl": "urn:uuid:a10cd505-e823-4249-912e-4e3cf8fb4e8c",
+        "resource": {
+          "resourceType": "Composition",
+          "id": "a10cd505-e823-4249-912e-4e3cf8fb4e8c",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ImmunizationRecord"
+            ]
+          },
+          "status": "final",
+          "type": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "41000179103",
+                "display": "Immunization record"
+              }
+            ]
+          },
+          "subject": {
+            "reference": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183"
+          },
+          "date": "2026-01-01T00:00:00Z",
+          "author": [
+            {
+              "reference": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1"
+            }
+          ],
+          "title": "Immunization record",
+          "section": [
+            {
+              "title": "Immunization record",
+              "entry": [
+                {
+                  "reference": "urn:uuid:916a36e5-7f52-4059-9f8c-1aa12adf9e9a",
+                  "type": "Immunization"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183",
+        "resource": {
+          "resourceType": "Patient",
+          "id": "c306296f-3e76-4958-9a3a-f44f213c6183",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "MR",
+                    "display": "Medical Record Number"
+                  }
+                ]
+              },
+              "system": "http://hospital.smarthealthit.org",
+              "value": "MR123"
+            }
+          ],
+          "name": [
+            {
+              "family": "Doe",
+              "given": [
+                "John"
+              ],
+              "text": "John Doe"
+            }
+          ],
+          "gender": "male",
+          "birthDate": "1980-01-15"
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1",
+        "resource": {
+          "resourceType": "Practitioner",
+          "id": "f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "MD",
+                    "display": "Medical License number"
+                  }
+                ]
+              },
+              "system": "https://doctor.ndhm.gov.in",
+              "value": "MD123"
+            }
+          ],
+          "name": [
+            {
+              "family": "Smith",
+              "prefix": [
+                "Dr."
+              ],
+              "text": "Dr. Smith"
+            }
+          ]
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:b20e4800-db7d-4dbb-8e2e-f1b8b34ffdf2",
+        "resource": {
+          "resourceType": "Organization",
+          "id": "b20e4800-db7d-4dbb-8e2e-f1b8b34ffdf2",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+            ]
+          },
+          "identifier": [
+            {
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    "code": "PRN",
+                    "display": "Provider number"
+                  }
+                ]
+              },
+              "system": "https://facility.ndhm.gov.in",
+              "value": "PRN123"
+            }
+          ],
+          "name": "General Hospital"
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:e10cd505-e823-4249-912e-4e3cf8fb4e8e",
+        "resource": {
+          "resourceType": "Encounter",
+          "id": "e10cd505-e823-4249-912e-4e3cf8fb4e8e",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+            ]
+          },
+          "status": "finished",
+          "class": {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            "code": "AMB",
+            "display": "ambulatory"
+          },
+          "period": {
+            "start": "2026-01-01T00:00:00Z"
+          },
+          "subject": {
+            "reference": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183"
+          },
+          "participant": [
+            {
+              "type": [
+                {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                      "code": "PPRF",
+                      "display": "primary performer"
+                    }
+                  ]
+                }
+              ],
+              "individual": {
+                "reference": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1"
+              }
+            }
+          ],
+          "serviceProvider": {
+            "reference": "urn:uuid:b20e4800-db7d-4dbb-8e2e-f1b8b34ffdf2"
+          }
+        }
+      },
+      {
+        "fullUrl": "urn:uuid:916a36e5-7f52-4059-9f8c-1aa12adf9e9a",
+        "resource": {
+          "resourceType": "Immunization",
+          "id": "916a36e5-7f52-4059-9f8c-1aa12adf9e9a",
+          "meta": {
+            "profile": [
+              "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Immunization"
+            ]
+          },
+          "status": "completed",
+          "vaccineCode": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "1119349007",
+                "display": "Covaxin"
+              }
+            ],
+            "text": "Covaxin"
+          },
+          "patient": {
+            "reference": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183"
+          },
+          "encounter": {
+            "reference": "urn:uuid:e10cd505-e823-4249-912e-4e3cf8fb4e8e"
+          },
+          "occurrenceDateTime": "2026-01-01T00:00:00Z",
+          "primarySource": false,
+          "performer": [
+            {
+              "function": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0443",
+                    "code": "AP",
+                    "display": "Administering Provider"
+                  }
+                ]
+              },
+              "actor": {
+                "reference": "urn:uuid:f0e83800-db7d-4dbb-8e2e-f1b8b34ffdf1"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

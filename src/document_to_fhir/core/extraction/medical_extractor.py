@@ -18,6 +18,7 @@ import logging
 
 from google.genai import types
 
+from src.document_to_fhir.common import file_util
 from src.document_to_fhir.common import llm_util
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common.schema import medical_documents
@@ -25,8 +26,7 @@ from src.document_to_fhir.common.schema import medical_documents
 
 def read_prompt(prompt_path: str) -> str:
   """Reads the prompt from the given path."""
-  with open(prompt_path, "rt") as f:
-    return f.read().strip()
+  return file_util.read_prompt(prompt_path)
 
 
 class MedicalExtractor(abc.ABC):

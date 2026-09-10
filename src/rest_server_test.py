@@ -357,14 +357,54 @@ class RestServerTest(absltest.TestCase):
         'loinc_analaytes_index_csv_path': 'dummy.csv',
         'loinc_system_kb_csv_path': 'dummy_system.csv',
         'loinc_property_kb_csv_path': 'dummy_property.csv',
+        'loinc_rsna_playbook_index_csv_path': 'dummy_rsna.csv',
+        'snomed_drug_brand_kb_path': 'dummy_brand.txt',
+        'snomed_drug_generic_kb_path': 'dummy_generic.txt',
+        'snomed_drug_substance_kb_path': 'dummy_substance.txt',
+        'snomed_drug_product_kb_path': 'dummy_product.txt',
+        'snomed_drug_substance_variations_path': 'dummy_variations.txt',
+        'snomed_drug_form_kb_path': 'dummy_form.txt',
+        'snomed_drug_route_kb_path': 'dummy_route.txt',
+        'snomed_vaccine_kb_path': 'dummy_vaccine.tsv',
     }
 
-    with unittest.mock.patch(
-        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte.index.AnalytesIndex.from_csv'
-    ) as mock_from_csv, unittest.mock.patch(
-        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.system.mapper.SpecimenToSystemMapper.from_csv'
-    ), unittest.mock.patch(
-        'src.document_to_fhir.core.medical_coding.loinc.axes_kb.property.mapper.UnitToPropertyMapper.from_csv'
+    with (
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte.index.AnalytesIndex.from_csv'
+        ) as mock_from_csv,
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system.mapper.SpecimenToSystemMapper.from_csv'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.property.mapper.UnitToPropertyMapper.from_csv'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.loinc.radiology.query.RsnaPlaybookQueryEngine.from_csv'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.brand_index.BrandIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.generic_index.GenericIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.substance_index.SubstanceIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.product_index.ProductIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.substance_variations_index.SubstanceVariationsIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.form_index.FormIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.drug.index.route_index.RouteIndex.from_index_file'
+        ),
+        unittest.mock.patch(
+            'src.document_to_fhir.core.medical_coding.snomed.vaccine.index.snomed_vaccine_index.SnomedVaccineIndex.from_index_file'
+        ),
     ):
       mock_from_csv.return_value = unittest.mock.MagicMock()
       standardizer = rest_server.get_composite_standardizer()
@@ -384,7 +424,7 @@ class RestServerTest(absltest.TestCase):
 
   @unittest.mock.patch.dict(
       'src.rest_server.os.environ',
-      {'LITELLM_API_KEY': 'fake_key'}
+      {'LITELLM_API_KEY': 'fake_key'},
   )
   @unittest.mock.patch(
       'src.document_to_fhir.common.model_client.LiteLLMClient'
@@ -504,6 +544,299 @@ class RestServerTest(absltest.TestCase):
     max_pages2 = rest_server._get_max_pdf_pages()
     self.assertEqual(max_pages2, 55)
     mock_yaml_load.assert_not_called()
+
+  def test_get_config_variable_success(self):
+    config = {'test_key': 'test_value'}
+    self.assertEqual(
+        rest_server._get_config_variable(config, 'test_key'), 'test_value'
+    )
+
+  def test_get_config_variable_missing_key(self):
+    config = {'other_key': 'value'}
+    with self.assertRaisesRegex(
+        ValueError, 'test_key is required in config\\.'
+    ):
+      rest_server._get_config_variable(config, 'test_key')
+
+  def test_get_config_variable_empty_value(self):
+    for empty_val in ['', None, {}, []]:
+      with self.subTest(empty_val=empty_val):
+        config = {'test_key': empty_val}
+        with self.assertRaisesRegex(
+            ValueError, 'test_key is required in config\\.'
+        ):
+          rest_server._get_config_variable(config, 'test_key')
+
+  def test_get_config_variable_invalid_config(self):
+    for invalid_config in [None, 'not a mapping']:
+      with self.subTest(invalid_config=invalid_config):
+        with self.assertRaisesRegex(
+            ValueError, 'test_key is required in config\\.'
+        ):
+          rest_server._get_config_variable(invalid_config, 'test_key')
+
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte.index.AnalytesIndex.from_csv'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system.mapper.SpecimenToSystemMapper.from_csv'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.property.mapper.UnitToPropertyMapper.from_csv'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.loinc.laboratory.query.LaboratoryLoincQueryEngine'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.loinc.radiology.query.RsnaPlaybookQueryEngine.from_csv'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.mapper.terminology_mappers.loinc_terminology_mapper.LoincTerminologyMapper'
+  )
+  def test_create_loinc_mapper(
+      self,
+      mock_mapper_cls,
+      mock_rsna_mapper_csv,
+      mock_query_engine_cls,
+      mock_property_mapper_csv,
+      mock_system_mapper_csv,
+      mock_analyte_index_csv,
+  ):
+    config = {
+        'loinc_analaytes_index_csv_path': 'dummy_analyte.csv',
+        'loinc_system_kb_csv_path': 'dummy_system.csv',
+        'loinc_property_kb_csv_path': 'dummy_property.csv',
+        'loinc_rsna_playbook_index_csv_path': 'dummy_rsna.csv',
+    }
+    mapper = rest_server._create_loinc_mapper(config)
+    mock_analyte_index_csv.assert_called_once_with('dummy_analyte.csv')
+    mock_system_mapper_csv.assert_called_once_with('dummy_system.csv')
+    mock_property_mapper_csv.assert_called_once_with('dummy_property.csv')
+    mock_rsna_mapper_csv.assert_called_once_with('dummy_rsna.csv')
+    mock_query_engine_cls.assert_called_once_with(
+        analyte_index=mock_analyte_index_csv.return_value,
+        system_mapper=mock_system_mapper_csv.return_value,
+        scale_mapper=unittest.mock.ANY,
+        property_mapper=mock_property_mapper_csv.return_value,
+    )
+    mock_mapper_cls.assert_called_once_with(
+        lab_query_engine=mock_query_engine_cls.return_value,
+        radiology_query_engine=mock_rsna_mapper_csv.return_value,
+    )
+    self.assertEqual(mapper, mock_mapper_cls.return_value)
+
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.brand_index.BrandIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.generic_index.GenericIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.substance_index.SubstanceIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.product_index.ProductIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.substance_variations_index.SubstanceVariationsIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.form_index.FormIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.index.route_index.RouteIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.drug.query.snomed_drug_query_engine.SnomedDrugQueryEngine'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.mapper.terminology_mappers.snomed_drug_terminology_mapper.SnomedDrugTerminologyMapper'
+  )
+  def test_create_snomed_drug_mapper(
+      self,
+      mock_mapper_cls,
+      mock_query_engine_cls,
+      mock_route_idx,
+      mock_form_idx,
+      mock_variations_idx,
+      mock_product_idx,
+      mock_substance_idx,
+      mock_generic_idx,
+      mock_brand_idx,
+  ):
+    config = {
+        'snomed_drug_brand_kb_path': 'dummy_brand.txt',
+        'snomed_drug_generic_kb_path': 'dummy_generic.txt',
+        'snomed_drug_substance_kb_path': 'dummy_substance.txt',
+        'snomed_drug_product_kb_path': 'dummy_product.txt',
+        'snomed_drug_substance_variations_path': 'dummy_variations.txt',
+        'snomed_drug_form_kb_path': 'dummy_form.txt',
+        'snomed_drug_route_kb_path': 'dummy_route.txt',
+    }
+    mapper = rest_server._create_snomed_drug_mapper(config)
+    mock_brand_idx.assert_called_once_with('dummy_brand.txt')
+    mock_generic_idx.assert_called_once_with('dummy_generic.txt')
+    mock_substance_idx.assert_called_once_with('dummy_substance.txt')
+    mock_product_idx.assert_called_once_with('dummy_product.txt')
+    mock_variations_idx.assert_called_once_with('dummy_variations.txt')
+    mock_form_idx.assert_called_once_with('dummy_form.txt')
+    mock_route_idx.assert_called_once_with('dummy_route.txt')
+    mock_query_engine_cls.assert_called_once_with(
+        brand_idx=mock_brand_idx.return_value,
+        generic_idx=mock_generic_idx.return_value,
+        substance_idx=mock_substance_idx.return_value,
+        product_idx=mock_product_idx.return_value,
+        substance_variations_idx=mock_variations_idx.return_value,
+        form_idx=mock_form_idx.return_value,
+        route_idx=mock_route_idx.return_value,
+    )
+    mock_mapper_cls.assert_called_once_with(mock_query_engine_cls.return_value)
+    self.assertEqual(mapper, mock_mapper_cls.return_value)
+
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.vaccine.index.snomed_vaccine_index.SnomedVaccineIndex.from_index_file'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.snomed.vaccine.query.snomed_vaccine_query_engine.SnomedVaccineQueryEngine'
+  )
+  @unittest.mock.patch(
+      'src.document_to_fhir.core.medical_coding.mapper.terminology_mappers.snomed_vaccine_terminology_mapper.SnomedVaccineTerminologyMapper'
+  )
+  def test_create_snomed_vaccine_mapper(
+      self,
+      mock_mapper_cls,
+      mock_query_engine_cls,
+      mock_vaccine_idx,
+  ):
+    config = {
+        'snomed_vaccine_kb_path': 'dummy_vaccine.tsv',
+    }
+    mapper = rest_server._create_snomed_vaccine_mapper(config)
+    mock_vaccine_idx.assert_called_once_with('dummy_vaccine.tsv')
+    mock_query_engine_cls.assert_called_once_with(
+        vaccine_index=mock_vaccine_idx.return_value,
+    )
+    mock_mapper_cls.assert_called_once_with(mock_query_engine_cls.return_value)
+    self.assertEqual(mapper, mock_mapper_cls.return_value)
+
+  def test_create_snomed_vaccine_mapper_missing_path(self):
+    for invalid_config in [
+        {},
+        {'snomed_vaccine_kb_path': ''},
+        {'snomed_vaccine_kb_path': None},
+    ]:
+      with self.subTest(invalid_config=invalid_config):
+        with self.assertRaisesRegex(
+            ValueError, 'snomed_vaccine_kb_path is required in config\\.'
+        ):
+          rest_server._create_snomed_vaccine_mapper(invalid_config)
+
+  @unittest.mock.patch(
+      'src.rest_server._create_loinc_mapper'
+  )
+  @unittest.mock.patch(
+      'src.rest_server._create_snomed_drug_mapper'
+  )
+  @unittest.mock.patch(
+      'src.rest_server._create_snomed_vaccine_mapper'
+  )
+  def test_get_mapper_registry(
+      self, mock_vaccine_mapper, mock_snomed_mapper, mock_loinc_mapper
+  ):
+    mock_loinc = unittest.mock.MagicMock()
+    mock_snomed = unittest.mock.MagicMock()
+    mock_vaccine = unittest.mock.MagicMock()
+    mock_loinc_mapper.return_value = mock_loinc
+    mock_snomed_mapper.return_value = mock_snomed
+    mock_vaccine_mapper.return_value = mock_vaccine
+
+    config = {'dummy': 'config'}
+    registry = rest_server._get_mapper_registry(config)
+
+    mock_loinc_mapper.assert_called_once_with(config)
+    mock_snomed_mapper.assert_called_once_with(config)
+    mock_vaccine_mapper.assert_called_once_with(config)
+    self.assertEqual(
+        registry,
+        {
+            rest_server.resources.LabTest: mock_loinc,
+            rest_server.medical_documents.RadiologyReport: mock_loinc,
+            rest_server.abdm_medical_documents.AbdmRadiologyReport: mock_loinc,
+            rest_server.resources.Medication: mock_snomed,
+            rest_server.resources.Immunization: mock_vaccine,
+        },
+    )
+
+  def test_document_type_mapping_immunization(self):
+    self.assertIn('IMMUNIZATION', rest_server._DOCUMENT_TYPE_MAPPING)
+    mapping = rest_server._DOCUMENT_TYPE_MAPPING['IMMUNIZATION']
+    self.assertIs(
+        mapping['extractor_class'],
+        rest_server.immunization_extractor.ImmunizationExtractor,
+    )
+    self.assertIs(
+        mapping['schema'],
+        rest_server.abdm_medical_documents.AbdmImmunizationRecord,
+    )
+    self.assertIs(
+        mapping['fhir_generator_class'],
+        rest_server.abdm_immunization_fhir_generator.AbdmImmunizationFhirGenerator,
+    )
+
+  @unittest.mock.patch(
+      'src.rest_server._get_mapper_registry'
+  )
+  @unittest.mock.patch(
+      'src.rest_server.medical_document_standardizer.MedicalDocumentStandardizer'
+  )
+  def test_create_standardizer_map_immunization(
+      self,
+      mock_standardizer_cls,
+      mock_get_mapper_registry,
+  ):
+    mock_registry = {
+        rest_server.resources.Immunization: unittest.mock.MagicMock()
+    }
+    mock_get_mapper_registry.return_value = mock_registry
+    mock_client = unittest.mock.MagicMock()
+
+    mock_extractor_cls = unittest.mock.MagicMock()
+    mock_fhir_gen_cls = unittest.mock.MagicMock()
+
+    with unittest.mock.patch.dict(
+        rest_server._DOCUMENT_TYPE_MAPPING,
+        {
+            'IMMUNIZATION': {
+                'extractor_class': mock_extractor_cls,
+                'schema': rest_server.abdm_medical_documents.AbdmImmunizationRecord,
+                'fhir_generator_class': mock_fhir_gen_cls,
+            }
+        },
+    ):
+      config = {'supported_types': ['IMMUNIZATION']}
+      standardizer_map = rest_server._create_standardizer_map(
+          config, mock_client
+      )
+
+      mock_extractor_cls.assert_called_once_with(
+          mock_client, rest_server.abdm_medical_documents.AbdmImmunizationRecord
+      )
+      mock_fhir_gen_cls.assert_called_once_with()
+      mock_standardizer_cls.assert_called_once_with(
+          extractor=mock_extractor_cls.return_value,
+          mapper_registry=mock_registry,
+          fhir_generator=mock_fhir_gen_cls.return_value,
+      )
+      self.assertIn(
+          rest_server.document_types.MedicalDocumentType.IMMUNIZATION,
+          standardizer_map,
+      )
+      self.assertEqual(
+          standardizer_map[
+              rest_server.document_types.MedicalDocumentType.IMMUNIZATION
+          ],
+          mock_standardizer_cls.return_value,
+      )
 
 
 if __name__ == '__main__':

@@ -498,7 +498,7 @@ class CompositeDocumentStandardizer:
                 "end_page": standardized_document.end_page,
             })
             segment_token_usages.append({
-                "document_type": standardized_document.document_type.value,
+                "document_type": standardized_document.document_type,
                 "start_page": standardized_document.start_page,
                 "end_page": standardized_document.end_page,
                 "latency_ms": segment_latency,
@@ -539,13 +539,15 @@ class CompositeDocumentStandardizer:
       encoded_data = base64.b64encode(data).decode("utf-8")
 
       for doc in standardized_composite_document.standardized_medical_documents:
-        if (
-            doc.document_type
-            == document_types.MedicalDocumentType.LABORATORY_REPORT
+        if doc.document_type in (
+            document_types.MedicalDocumentType.LABORATORY_REPORT,
+            document_types.MedicalDocumentType.RADIOLOGY_REPORT,
+            document_types.MedicalDocumentType.PRESCRIPTION,
+            document_types.MedicalDocumentType.IMMUNIZATION,
         ):
           if doc.fhir_bundle:
             updated_bundle, modified = (
-                abdm_bundle_enricher.add_document_reference_to_lab_report(
+                abdm_bundle_enricher.add_document_reference_to_bundle(
                     doc.fhir_bundle, encoded_data, mime_type
                 )
             )

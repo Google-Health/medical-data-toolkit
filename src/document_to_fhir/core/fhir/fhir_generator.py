@@ -37,7 +37,6 @@ class IFhirGenerator(ABC):
       version: The version of the FHIR generator.
       fhir_profile: The FHIR profile to use for generation.
     """
-    pass
 
   @abstractmethod
   def generate_fhir(
@@ -51,4 +50,3 @@ class IFhirGenerator(ABC):
     Returns:
       A FHIR bundle representing the medical document.
     """
-    pass

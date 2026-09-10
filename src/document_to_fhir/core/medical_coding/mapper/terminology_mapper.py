@@ -24,4 +24,3 @@ class ITerminologyMapper(ABC):
   @abstractmethod
   def map_inplace(self, model_instance: resources.MedicalData):
     """Takes a MedicalData like LabTest and updates its medical coding."""
-    pass

@@ -17,6 +17,7 @@ Use these clinical nuances to distinguish between similar document types:
 - **WELLNESS_RECORD**: Contains preventive health data, personal health monitoring, or lifestyle assessments. Look for sections like "Health Risk Assessment (HRA)", "Preventive Health Package", "Vital Signs Logs" (continuous glucose, daily BP logs), "Physical Activity", "Diet Plan", "Lifestyle Habits", or "Body Measurements" (BMI, Waist Circumference). Unlike clinical consultation notes, these focus on proactive, preventative wellness or patient self-reported logs.
 - **INVOICE**: Financial and billing transactions for healthcare services rendered. Look for structured financial tables with columns like "Item Description", "Charge / Fee", "Co-pay", "Tax", and "Total Amount". Key anchor phrases: "Billing Statement", "Invoice", "Tax Invoice", "Payment Receipt", "Receipt No", "Bill Details", and "Cashier Signature".
 - **RADIOLOGY_REPORT**: Reports for medical imaging. Look for keywords like "Radiology Report", "Imaging Report", "X-ray", "CT", "MRI", "Ultrasound", "ECG", "EKG", "PET", "PFT", "Endoscopy" and "Radiologist".
+- **RADIOLOGY_IMAGE**: Medical images like X-rays, CT scans, MRIs, etc. that are not attached to a radiology report. Typically do not contain any patient information, text or findings.
 - **SMART_REPORT**: May contain one or more pages. Usually an electronically generated, easy-to-understand medical summary that uses pictures, charts, and infographics to simplify complex health parameters and track results across time. If test results are present but there is no signature, it is likely a SMART REPORT.
 - **NON_MEDICAL**: Documents that do not contain clinical health, wellness, diagnostic, or transaction data. This includes administrative, legal, or personal identification records. Examples include Government IDs, insurance policy cards, patient photographs, employer-related correspondence, generic informational pamphlets, blank pages, or cover sheets.
 
@@ -24,6 +25,7 @@ Use these clinical nuances to distinguish between similar document types:
 1. Every page of the document must be accounted for in your output. Note that the start and end pages need to be the same if the document has a single page.
 2. There must be absolutely **zero** overlap or page repetition between different predicted segments. Page ranges must be strictly sequential and mutually exclusive.
 3. The "reasoning" should briefly mention the specific "anchor phrases" or structural elements used to identify the document, and justification of the predicted page range using header, patient name, date etc.
+4. A document segment must belong to a single patient only. Do not mix multiple patients in a single document segment.
 
 Guidelines:
 1. Ensure the output JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.

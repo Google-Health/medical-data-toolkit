@@ -36,20 +36,39 @@ import yaml
 import flask
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.common.schema import document_types
+from src.document_to_fhir.common.schema import medical_documents
 from src.document_to_fhir.common.schema import resources
 from src.document_to_fhir.common.schema.abdm import abdm_medical_documents
 from src.document_to_fhir.core.classification import classifier
+from src.document_to_fhir.core.extraction.extractors import immunization_extractor
 from src.document_to_fhir.core.extraction.extractors import lab_report_extractor
+from src.document_to_fhir.core.extraction.extractors import prescription_extractor
+from src.document_to_fhir.core.extraction.extractors import radiology_report_extractor
+from src.document_to_fhir.core.fhir.abdm import abdm_immunization_fhir_generator
 from src.document_to_fhir.core.fhir.abdm import abdm_lab_report_fhir_generator
-from src.document_to_fhir.core.medical_coding.loinc import query as loinc_query
-from src.document_to_fhir.core.medical_coding.loinc.axes_kb.core_analyte import index as analyte_index_lib
-from src.document_to_fhir.core.medical_coding.loinc.axes_kb.property import mapper as property_mapper_lib
-from src.document_to_fhir.core.medical_coding.loinc.axes_kb.scale_type import mapper as scale_mapper_lib
-from src.document_to_fhir.core.medical_coding.loinc.axes_kb.system import mapper as systems_mapper
+from src.document_to_fhir.core.fhir.abdm import abdm_prescription_fhir_generator
+from src.document_to_fhir.core.fhir.abdm import abdm_radiology_report_fhir_generator
+from src.document_to_fhir.core.medical_coding.loinc.laboratory import query as lab_query
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import index as analyte_index_lib
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.property import mapper as property_mapper_lib
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.scale_type import mapper as scale_mapper_lib
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system import mapper as systems_mapper
+from src.document_to_fhir.core.medical_coding.loinc.radiology import query as rsna_query
 from src.document_to_fhir.core.medical_coding.mapper.terminology_mappers import loinc_terminology_mapper
+from src.document_to_fhir.core.medical_coding.mapper.terminology_mappers import snomed_drug_terminology_mapper
+from src.document_to_fhir.core.medical_coding.mapper.terminology_mappers import snomed_vaccine_terminology_mapper
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import brand_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import form_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import generic_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import product_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import route_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import substance_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.index import substance_variations_index
+from src.document_to_fhir.core.medical_coding.snomed.drug.query import snomed_drug_query_engine
+from src.document_to_fhir.core.medical_coding.snomed.vaccine.index import snomed_vaccine_index
+from src.document_to_fhir.core.medical_coding.snomed.vaccine.query import snomed_vaccine_query_engine
 from src.document_to_fhir.core.orchestrator import composite_document_standardizer
 from src.document_to_fhir.core.orchestrator import medical_document_standardizer
-
 
 # Context variable to store the job_id for the current request context.
 _job_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -107,6 +126,27 @@ _DOCUMENT_TYPE_MAPPING = {
             abdm_lab_report_fhir_generator.AbdmLabReportFhirGenerator
         ),
     },
+    'RADIOLOGY_REPORT': {
+        'extractor_class': radiology_report_extractor.RadiologyReportExtractor,
+        'schema': abdm_medical_documents.AbdmRadiologyReport,
+        'fhir_generator_class': (
+            abdm_radiology_report_fhir_generator.AbdmRadiologyReportFhirGenerator
+        ),
+    },
+    'PRESCRIPTION': {
+        'extractor_class': prescription_extractor.PrescriptionExtractor,
+        'schema': abdm_medical_documents.AbdmPrescription,
+        'fhir_generator_class': (
+            abdm_prescription_fhir_generator.AbdmPrescriptionFhirGenerator
+        ),
+    },
+    'IMMUNIZATION': {
+        'extractor_class': immunization_extractor.ImmunizationExtractor,
+        'schema': abdm_medical_documents.AbdmImmunizationRecord,
+        'fhir_generator_class': (
+            abdm_immunization_fhir_generator.AbdmImmunizationFhirGenerator
+        ),
+    },
 }
 
 _MAX_PDF_PAGES_DEFAULT = 40
@@ -137,6 +177,27 @@ def _init_fork_module_state():
   _max_pdf_pages_lock = threading.Lock()
 
 
+def _get_config_variable(config: Mapping[str, Any], key: str) -> Any:
+  """Gets a configuration variable, raising ValueError if missing or empty.
+
+  Args:
+    config: The configuration mapping.
+    key: The configuration key to retrieve.
+
+  Returns:
+    The configuration value.
+
+  Raises:
+    ValueError: If the configuration variable is missing or empty.
+  """
+  if not isinstance(config, Mapping):
+    raise ValueError(f'{key} is required in config.')
+  val = config.get(key)
+  if not val:
+    raise ValueError(f'{key} is required in config.')
+  return val
+
+
 def get_composite_standardizer() -> (
     composite_document_standardizer.CompositeDocumentStandardizer | None
 ):
@@ -165,10 +226,10 @@ def get_composite_standardizer() -> (
       with open(config_file, 'r') as f:
         config = yaml.safe_load(f)
       classifier_client = _create_llm_client(
-          config.get('classifier_llm_client', {})
+          _get_config_variable(config, 'classifier_llm_client')
       )
       extractor_client = _create_llm_client(
-          config.get('extractor_llm_client', {})
+          _get_config_variable(config, 'extractor_llm_client')
       )
       standardizer_map = _create_standardizer_map(config, extractor_client)
       classifier_inst = classifier.MultiDocumentClassifier(
@@ -484,27 +545,22 @@ def _create_llm_client(config: Mapping[str, Any]) -> model_client.LLMClient:
     raise ValueError(f'Unsupported LLMClient type: {client_type}')
 
 
-def _create_standardizer_map(
-    config: Mapping[str, Any], client: model_client.LLMClient
-) -> Mapping[
-    document_types.MedicalDocumentType,
-    medical_document_standardizer.MedicalDocumentStandardizer,
-]:
-  """Creates the map of standardizers based on configuration."""
-  standardizer_map = {}
-  loinc_analaytes_index_csv_path = config.get('loinc_analaytes_index_csv_path')
-  loinc_system_kb_csv_path = config.get('loinc_system_kb_csv_path')
-  loinc_property_kb_csv_path = config.get('loinc_property_kb_csv_path')
-
-  if not loinc_analaytes_index_csv_path:
-    raise ValueError(
-        'loinc_analaytes_index_csv_path is required in config for terminology'
-        ' mapping.'
-    )
-  if not loinc_system_kb_csv_path:
-    raise ValueError('loinc_system_kb_csv_path is required in config.')
-  if not loinc_property_kb_csv_path:
-    raise ValueError('loinc_property_kb_csv_path is required in config.')
+def _create_loinc_mapper(
+    config: Mapping[str, Any],
+) -> loinc_terminology_mapper.LoincTerminologyMapper:
+  """Creates the LOINC terminology mapper based on configuration."""
+  loinc_analaytes_index_csv_path = _get_config_variable(
+      config, 'loinc_analaytes_index_csv_path'
+  )
+  loinc_system_kb_csv_path = _get_config_variable(
+      config, 'loinc_system_kb_csv_path'
+  )
+  loinc_property_kb_csv_path = _get_config_variable(
+      config, 'loinc_property_kb_csv_path'
+  )
+  loinc_rsna_playbook_index_csv_path = _get_config_variable(
+      config, 'loinc_rsna_playbook_index_csv_path'
+  )
 
   analyte_index = analyte_index_lib.AnalytesIndex.from_csv(
       loinc_analaytes_index_csv_path
@@ -517,14 +573,130 @@ def _create_standardizer_map(
   )
   scale_mapper = scale_mapper_lib.ScaleMapper()
 
-  query_engine = loinc_query.LoincQueryEngine(
+  lab_query_engine = lab_query.LaboratoryLoincQueryEngine(
       analyte_index=analyte_index,
       system_mapper=system_mapper,
       scale_mapper=scale_mapper,
       property_mapper=property_mapper,
   )
-  mapper = loinc_terminology_mapper.LoincTerminologyMapper(query_engine)
-  mapper_registry = {resources.LabTest: mapper}
+  radiology_query_engine = rsna_query.RsnaPlaybookQueryEngine.from_csv(
+      loinc_rsna_playbook_index_csv_path
+  )
+  return loinc_terminology_mapper.LoincTerminologyMapper(
+      lab_query_engine=lab_query_engine,
+      radiology_query_engine=radiology_query_engine,
+  )
+
+
+def _create_snomed_drug_mapper(
+    config: Mapping[str, Any],
+) -> snomed_drug_terminology_mapper.SnomedDrugTerminologyMapper:
+  """Creates the SNOMED DRUG terminology mapper based on configuration."""
+  snomed_drug_brand_kb_path = _get_config_variable(
+      config, 'snomed_drug_brand_kb_path'
+  )
+  snomed_drug_generic_kb_path = _get_config_variable(
+      config, 'snomed_drug_generic_kb_path'
+  )
+  snomed_drug_substance_kb_path = _get_config_variable(
+      config, 'snomed_drug_substance_kb_path'
+  )
+  snomed_drug_product_kb_path = _get_config_variable(
+      config, 'snomed_drug_product_kb_path'
+  )
+  snomed_drug_substance_variations_path = _get_config_variable(
+      config, 'snomed_drug_substance_variations_path'
+  )
+  snomed_drug_form_kb_path = _get_config_variable(
+      config, 'snomed_drug_form_kb_path'
+  )
+  snomed_drug_route_kb_path = _get_config_variable(
+      config, 'snomed_drug_route_kb_path'
+  )
+
+  snomed_brand_idx = brand_index.BrandIndex.from_index_file(
+      snomed_drug_brand_kb_path
+  )
+  snomed_generic_idx = generic_index.GenericIndex.from_index_file(
+      snomed_drug_generic_kb_path
+  )
+  snomed_substance_idx = substance_index.SubstanceIndex.from_index_file(
+      snomed_drug_substance_kb_path
+  )
+  snomed_product_idx = product_index.ProductIndex.from_index_file(
+      snomed_drug_product_kb_path
+  )
+  snomed_substance_variations_idx = (
+      substance_variations_index.SubstanceVariationsIndex.from_index_file(
+          snomed_drug_substance_variations_path
+      )
+  )
+  snomed_form_idx = form_index.FormIndex.from_index_file(
+      snomed_drug_form_kb_path
+  )
+  snomed_route_idx = route_index.RouteIndex.from_index_file(
+      snomed_drug_route_kb_path
+  )
+
+  snomed_query_engine = snomed_drug_query_engine.SnomedDrugQueryEngine(
+      brand_idx=snomed_brand_idx,
+      generic_idx=snomed_generic_idx,
+      substance_idx=snomed_substance_idx,
+      product_idx=snomed_product_idx,
+      substance_variations_idx=snomed_substance_variations_idx,
+      form_idx=snomed_form_idx,
+      route_idx=snomed_route_idx,
+  )
+  return snomed_drug_terminology_mapper.SnomedDrugTerminologyMapper(
+      snomed_query_engine
+  )
+
+
+def _create_snomed_vaccine_mapper(
+    config: Mapping[str, Any],
+) -> snomed_vaccine_terminology_mapper.SnomedVaccineTerminologyMapper:
+  """Creates the SNOMED vaccine terminology mapper based on configuration."""
+  snomed_vaccine_kb_path = _get_config_variable(
+      config, 'snomed_vaccine_kb_path'
+  )
+  vaccine_index = (
+      snomed_vaccine_index.SnomedVaccineIndex.from_index_file(
+          snomed_vaccine_kb_path
+      )
+  )
+  vaccine_query_engine = (
+      snomed_vaccine_query_engine.SnomedVaccineQueryEngine(
+          vaccine_index=vaccine_index
+      )
+  )
+  return snomed_vaccine_terminology_mapper.SnomedVaccineTerminologyMapper(
+      vaccine_query_engine
+  )
+
+
+def _get_mapper_registry(
+    config: Mapping[str, Any],
+) -> dict[type[resources.MedicalData], Any]:
+  """Creates the mapper registry mapping resource types to terminology mappers."""
+  loinc_mapper = _create_loinc_mapper(config)
+  return {
+      resources.LabTest: loinc_mapper,
+      medical_documents.RadiologyReport: loinc_mapper,
+      abdm_medical_documents.AbdmRadiologyReport: loinc_mapper,
+      resources.Medication: _create_snomed_drug_mapper(config),
+      resources.Immunization: _create_snomed_vaccine_mapper(config),
+  }
+
+
+def _create_standardizer_map(
+    config: Mapping[str, Any], client: model_client.LLMClient
+) -> Mapping[
+    document_types.MedicalDocumentType,
+    medical_document_standardizer.MedicalDocumentStandardizer,
+]:
+  """Creates the map of standardizers based on configuration."""
+  mapper_registry = _get_mapper_registry(config)
+  standardizer_map = {}
 
   supported_types = config.get('supported_types', [])
   for doc_type_str in supported_types:

@@ -44,6 +44,7 @@ import datetime
 from typing import Annotated, Optional
 
 import pydantic
+from pydantic import json_schema
 
 from src.document_to_fhir.common.schema import resources
 
@@ -78,7 +79,13 @@ class LabReport(MedicalDocument):
   """Medical Laboratory Report for a patient."""
 
   sample_collection_time: Optional[CustomDateTime] = pydantic.Field(
-      default=None, description='Sample collection time of the lab report.'
+      default=None,
+      description=(
+          'Sample collection date and time of the lab report, often labeled as'
+          " 'Collected On', 'Collection Date/Time', or 'Sample Date'. Do not"
+          " confuse with registration ('Registered On') or reporting"
+          " ('Reported On') timestamps."
+      ),
   )
   patient: resources.Patient = pydantic.Field(description='Patient details.')
   service_provider: Optional[
@@ -89,4 +96,145 @@ class LabReport(MedicalDocument):
   ] = pydantic.Field(default=None, description='Clinical Practitioner details.')
   lab_tests: list[resources.LabTest] = pydantic.Field(
       description='List of lab tests.'
+  )
+
+
+class RadiologyReport(MedicalDocument):
+  """Medical Radiology/Imaging Report for a patient."""
+
+  study_date: Optional[CustomDateTime] = pydantic.Field(
+      default=None,
+      description=(
+          'Date and time of the imaging study, often labeled as'
+          " 'Study Date', 'Date of Study', 'Exam Date', 'Examination Date', or"
+          " 'Investigation Date'. Do not confuse with reporting"
+          " ('Reported On', 'Report Date') or registration"
+          " ('Registered On') timestamps."
+      ),
+  )
+  patient: resources.Patient = pydantic.Field(description='Patient details.')
+  service_provider: Optional[
+      resources.Organization[resources.BaseOrganizationIdentifiers]
+  ] = pydantic.Field(default=None, description='Service provider details.')
+  practitioner: Optional[
+      resources.Practitioner[resources.BasePractitionerIdentifiers]
+  ] = pydantic.Field(
+      default=None,
+      description='Clinical Practitioner details (e.g., Radiologist).',
+  )
+
+  modality_type: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Imaging modality type only (e.g., CT, MR, XR, US, MG, NM, PT, RF).'
+          ' For compound procedures like CTA, extract the base modality "CT"'
+          ' here and the technique "Angio" in modality_subtype.'
+      ),
+  )
+  modality_subtype: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Imaging modality subtype or specific technique (e.g., Angio, Doppler,'
+          ' Tomosynthesis, SPECT, Portable). For example, for CTA or MRA,'
+          ' extract "Angio" here.'
+      ),
+  )
+
+  region_imaged: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Anatomic region and specific imaging focus if present (e.g., Head,'
+          ' Chest, Spine, Cervical Spine, Lumbar Spine, Knee, Abdomen and'
+          ' Pelvis, Wrist).'
+      ),
+  )
+  contrast_used: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Contrast administration and timing (e.g., "W contrast", "WO'
+          ' contrast", "W and WO contrast", "with IV contrast").'
+      ),
+  )
+  view_type: Optional[str] = pydantic.Field(
+      default=None,
+      description=(
+          'Radiographic view projection or view count/aggregation (e.g., "PA",'
+          ' "AP", "Lateral", "PA and Lateral", "Single view", "2 Views",'
+          ' "3 Views").'
+      ),
+  )
+  laterality: Optional[str] = pydantic.Field(
+      default=None,
+      description='Laterality (e.g., Left, Right, Bilateral, Unspecified).',
+  )
+  procedure_loinc_code: Annotated[
+      Optional[str], json_schema.SkipJsonSchema()
+  ] = pydantic.Field(
+      default=None,
+      description='LOINC code for the specific imaging procedure/study.',
+  )
+  procedure_loinc_common_name: Annotated[
+      Optional[str], json_schema.SkipJsonSchema()
+  ] = pydantic.Field(
+      default=None,
+      description='LOINC Long Common Name for the imaging procedure/study.',
+  )
+  exam_name: str = pydantic.Field(
+      description=(
+          'Name of the examination (e.g., "CT Head and Neck WO contrast").'
+      )
+  )
+  findings: Optional[str] = pydantic.Field(
+      default=None, description='Detailed findings of the radiology study.'
+  )
+  conclusion: Optional[str] = pydantic.Field(
+      default=None, description='Summary or clinical impression of the study.'
+  )
+  conclusion_code: Annotated[Optional[str], json_schema.SkipJsonSchema()] = (
+      pydantic.Field(
+          default=None,
+          description='Coded conclusion (e.g. SNOMED code for the diagnosis).',
+      )
+  )
+
+
+class Prescription(MedicalDocument):
+  """Medical Prescription for a patient."""
+
+  prescription_date: Optional[CustomDateTime] = pydantic.Field(
+      default=None,
+      description=(
+          'Date and time of the prescription, often labeled as'
+          " 'Date', 'Prescription Date', 'Prescribed On', or"
+          " 'Consultation Date'. Do not confuse with follow-up or review"
+          " dates ('Review On', 'Next Visit') or dispensing timestamps."
+      ),
+  )
+  diagnosis: Optional[list[str]] = pydantic.Field(
+      default=None, description='List of diagnoses of the patient.'
+  )
+  patient: resources.Patient = pydantic.Field(description='Patient details.')
+  service_provider: Optional[
+      resources.Organization[resources.BaseOrganizationIdentifiers]
+  ] = pydantic.Field(default=None, description='Service provider details.')
+  practitioner: Optional[
+      resources.Practitioner[resources.BasePractitionerIdentifiers]
+  ] = pydantic.Field(default=None, description='Clinical Practitioner details.')
+  medications: list[resources.Medication] = pydantic.Field(
+      description='List of medications.'
+  )
+
+
+class ImmunizationRecord(MedicalDocument):
+  """Immunization record for a patient."""
+
+  patient: resources.Patient = pydantic.Field(description='Patient details.')
+  service_provider: Optional[
+      resources.Organization[resources.BaseOrganizationIdentifiers]
+  ] = pydantic.Field(default=None, description='Service provider details.')
+  practitioner: Optional[
+      resources.Practitioner[resources.BasePractitionerIdentifiers]
+  ] = pydantic.Field(default=None, description='Clinical Practitioner details.')
+  immunizations: list[resources.Immunization] = pydantic.Field(
+      description='List of immunizations.'
   )

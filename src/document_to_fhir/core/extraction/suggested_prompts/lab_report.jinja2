@@ -3,5 +3,21 @@ Extract the patient name as [first name] [last name].
 
 Guidelines:
 1. For optional fields (like email, fax, website in contact), if they are not present in the document, set them to null.
-2. Ensure the JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.
-3. Always close all opened braces (e.g., `}`, `]`) correctly.
+2. Always convert dates and times to standard ISO 8601 format (e.g., `YYYY-MM-DDTHH:MM:SSZ`). For example, convert "25/06/2026 12:57PM" to "2026-06-25T12:57:00Z". If time is not provided, use `YYYY-MM-DD`.
+3. Ensure the JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.
+4. Always close all opened braces (e.g., `}`, `]`) correctly.
+
+Core-Analyte Definition:
+The Core Analyte is the unique physiological entity or chemical substance measured, entirely independent of specimen, method, or timing. Follow these strict rules to construct it:
+*   **Formatting & Noise Removal:**
+   *   **Standardize Casing:** Use Standard Scientific Capitalization (e.g., "HbA1c", "pH", "d-Dimer", "Free T4").
+   *   **Standardize Terminology:** Convert colloquial, informal, or historical laboratory terms into their most universally accepted formal clinical nomenclature (e.g., normalize "Blood Sugar" to "Glucose", and "Red Blood Corpuscles" to "Erythrocytes").
+   *   **Exclude Noise:** Remove specimen types (e.g., "Blood", "Serum"), test methods (e.g., "PCR"), and generic measurement nouns (e.g., "Level", "Count").
+*   **Handling Ratios, Differentials & Slashes (`/`):**
+   *   **Mathematical Ratios (Keep Both):** For fractions, ratios, and cell differentials (e.g., a test named "Neutrophils" with unit "%", "Trig/HDL", or "Albumin/Creatinine"), you MUST extract or construct the core analyte using **BOTH** the numerator and the denominator separated by a slash (e.g., "Neutrophils/Leukocytes", "Triglycerides/HDL", "Albumin/Creatinine").
+   *   **Synonyms & Subtypes (Keep One):** If a slash simply implies alternative names or subtypes rather than a true ratio, extract ONLY the primary scientific name (e.g., "PCV/Hematocrit" -> "Hematocrit", "Protein/Albumin" -> "Albumin").
+*   **Essential Modifiers:**
+   *   Preserve essential chemical states and clinical modifiers. Do NOT strip them down to generic roots (e.g., keep "Direct Bilirubin", "Non-HDL Cholesterol", "Transferrin Saturation").
+*   **Base Entities for Indices:**
+   *   For clinical indices and calculated parameters (e.g., MCHC, MCV, MPV, RDW), extract the **fundamental biological entity**. DROP the descriptive measurement modifiers (e.g., 'Mean', 'Corpuscular', 'Concentration', 'Volume', 'Width', 'Distribution').
+   *   *Examples:* "MCHC" -> "Hemoglobin" | "MCV" -> "Erythrocytes" | "MPV" -> "Platelets".
