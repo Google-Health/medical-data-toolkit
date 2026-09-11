@@ -44,6 +44,9 @@ max_pdf_pages: 40
 
 supported_types:
   - "LABORATORY_REPORT"
+  - "PRESCRIPTION"
+  - "IMMUNIZATION"
+  - "RADIOLOGY_REPORT"
 
 # Policy for validating documents with unsupported types.
 # ACCEPT_ALL: Accepts the document regardless of unsupported types.
