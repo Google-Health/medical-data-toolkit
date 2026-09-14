@@ -446,5 +446,142 @@ class SpecimenToSystemMapperTest(absltest.TestCase):
     self.assertIn('Urine', systems)
 
 
+class RankingRegressionTest(absltest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.records = [
+        # Bilirubin Total vs Direct
+        {
+            'LOINC_NUM': '1975-2',
+            'core_analyte': 'Bilirubin',
+            'LONG_COMMON_NAME': (
+                'Bilirubin.total [Mass/volume] in Serum or Plasma'
+            ),
+            'SYSTEM': 'Ser/Plas',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'MCnc',
+            'COMMON_TEST_RANK': 22,
+        },
+        {
+            'LOINC_NUM': '1968-7',
+            'core_analyte': 'Bilirubin',
+            'LONG_COMMON_NAME': (
+                'Bilirubin.direct [Mass/volume] in Serum or Plasma'
+            ),
+            'SYSTEM': 'Ser/Plas',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'MCnc',
+            'COMMON_TEST_RANK': 131,
+        },
+        # Albumin Serum vs Urine
+        {
+            'LOINC_NUM': '1751-7',
+            'core_analyte': 'Albumin',
+            'LONG_COMMON_NAME': 'Albumin [Mass/volume] in Serum or Plasma',
+            'SYSTEM': 'Ser/Plas',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'MCnc',
+            'COMMON_TEST_RANK': 39,
+        },
+        {
+            'LOINC_NUM': '1754-1',
+            'core_analyte': 'Albumin',
+            'LONG_COMMON_NAME': 'Albumin [Mass/volume] in Urine',
+            'SYSTEM': 'Urine',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'MCnc',
+            'COMMON_TEST_RANK': 272,
+        },
+        # Hemoglobin vs MCH
+        {
+            'LOINC_NUM': '718-7',
+            'core_analyte': 'Hemoglobin',
+            'LONG_COMMON_NAME': 'Hemoglobin [Mass/volume] in Blood',
+            'SYSTEM': 'Bld',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'MCnc',
+            'COMMON_TEST_RANK': 17,
+        },
+        {
+            'LOINC_NUM': '785-6',
+            'core_analyte': 'MCH',
+            'LONG_COMMON_NAME': 'MCH [Entitic mass] by Automated count',
+            'SYSTEM': 'Bld',
+            'SCALE_TYP': 'Qn',
+            'PROPERTY': 'EntMass',
+            'COMMON_TEST_RANK': 15,
+        },
+    ]
+    self.mock_index = mock.create_autospec(
+        index.AnalytesIndex, instance=True, spec_set=True
+    )
+
+    def search_analyte(analyte):
+      res = [
+          r
+          for r in self.records
+          if r['core_analyte'].lower() == analyte.lower()
+      ]
+      return [schema.LoincRow.model_validate(r) for r in res]
+
+    self.mock_index.search_by_analyte.side_effect = search_analyte
+    self.engine = query.LaboratoryLoincQueryEngine(self.mock_index)
+
+  def test_bilirubin_direct_disambiguation(self):
+    # When query contains 'Direct', 1968-7 should outrank 1975-2 despite lower
+    # rank.
+    test_input = resources.LabTest(
+        core_analyte='Bilirubin', name='Bilirubin Direct', result='0.2'
+    )
+    results = self.engine.query(test_input)
+    self.assertNotEmpty(results)
+    self.assertEqual(results[0].loinc_num, '1968-7')
+    self.assertEqual(results[1].loinc_num, '1975-2')
+
+  def test_bilirubin_total_disambiguation(self):
+    # When query contains 'Total', 1975-2 should be ranked #1
+    test_input = resources.LabTest(
+        core_analyte='Bilirubin', name='Bilirubin Total', result='0.8'
+    )
+    results = self.engine.query(test_input)
+    self.assertNotEmpty(results)
+    self.assertEqual(results[0].loinc_num, '1975-2')
+    self.assertEqual(results[1].loinc_num, '1968-7')
+
+  def test_albumin_serum_vs_urine_rank_prior(self):
+    # When specimen is unspecified, rank prior breaks tie in favor of Serum
+    # (rank 39) over Urine (rank 272).
+    test_input = resources.LabTest(
+        core_analyte='Albumin', name='Albumin', result='4.2'
+    )
+    results = self.engine.query(test_input)
+    self.assertNotEmpty(results)
+    self.assertEqual(results[0].loinc_num, '1751-7')
+    self.assertEqual(results[1].loinc_num, '1754-1')
+
+  def test_haemoglobin_commonwealth_spelling(self):
+    # 'Haemoglobin' should fuzzy match 'Hemoglobin' and rank 718-7 #1
+    test_input = resources.LabTest(
+        core_analyte='Hemoglobin', name='Haemoglobin', result='13.5'
+    )
+    results = self.engine.query(test_input)
+    self.assertNotEmpty(results)
+    self.assertEqual(results[0].loinc_num, '718-7')
+
+  def test_long_query_token_overlap_dominates_rank(self):
+    # For a long query (>20 tokens), 1 token match must still beat a 0-token
+    # match even when comparing against a higher LOINC popularity rank.
+    long_name = ' '.join([f'modifier{i}' for i in range(25)] + ['Direct'])
+    test_input = resources.LabTest(
+        core_analyte='Bilirubin', name=long_name, result='0.2'
+    )
+    results = self.engine.query(test_input)
+    self.assertNotEmpty(results)
+    # 1968-7 matches 'direct' from query; 1975-2 matches 0 tokens.
+    # 1968-7 must rank #1 despite lower rank (131 vs 22).
+    self.assertEqual(results[0].loinc_num, '1968-7')
+
+
 if __name__ == '__main__':
   absltest.main()

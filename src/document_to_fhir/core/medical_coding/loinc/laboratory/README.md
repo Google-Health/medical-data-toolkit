@@ -10,7 +10,9 @@ The system operates in two distinct phases:
 1.  **Knowledge Base Construction (Offline)**: Builds an offline precomputed
     dataset by enriching standard LOINC data with predicted core analytes and
     synonyms using LLMs.
-2.  **Runtime Querying (Online)**: Performs multi-layered retrieval based on analyte signatures and specimen-type filtering.
+2.  **Runtime Querying (Online)**: Performs multi-layered retrieval based on
+    analyte signatures, specimen/system filtering, and directional fuzzy token
+    overlap with damped popularity log-rank prior.
 
 ---
 
@@ -31,7 +33,7 @@ contains:
 ### 2. Main API for Querying
 
 - [`query.py`](query.py): The runtime engine that interfaces with indices to
-  execute multi-layered retrieval.
+  execute multi-layered retrieval and directional fuzzy token ranking.
 
 ---
 

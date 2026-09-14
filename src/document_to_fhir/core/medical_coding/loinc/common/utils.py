@@ -13,13 +13,13 @@
 # limitations under the License.
 """Utility functions for string manipulations and loinc data handling."""
 
-import collections
 import json
 import logging
 import re
 from typing import Any
 
 import pandas
+import stringdist
 
 from src.document_to_fhir.common import file_util
 
@@ -27,6 +27,10 @@ file_exists = file_util.file_exists
 open_file = file_util.open_file
 read_text_file = file_util.read_text_file
 read_prompt = file_util.read_prompt
+
+
+_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+NORMALIZED_LEVENSHTEIN_THRESHOLD = 0.15
 
 
 def read_csv(filepath: str, **kwargs: Any) -> pandas.DataFrame:
@@ -39,17 +43,71 @@ class StringUtils:
   """Helper methods for string related functions."""
 
   @classmethod
-  def get_similarity_ratio(cls, str1: str, str2: str) -> float:
-    s1 = "".join(c.lower() for c in str(str1) if c.isalnum())
-    s2 = "".join(c.lower() for c in str(str2) if c.isalnum())
+  def levenshtein_distance(cls, s1: str, s2: str) -> int:
+    """Computes the Levenshtein distance between two strings."""
+    return stringdist.levenshtein(s1, s2)
+
+  @classmethod
+  def normalized_levenshtein_distance(cls, s1: str, s2: str) -> float:
+    """Computes the normalized Levenshtein distance between two strings (0.0 to 1.0)."""
+    if not s1 and not s2:
+      return 0.0
     if not s1 or not s2:
       return 1.0
-    c1 = collections.Counter(s1)
-    c2 = collections.Counter(s2)
-    all_chars = set(c1.keys()) | set(c2.keys())
-    diff = sum(abs(c1[c] - c2[c]) for c in all_chars)
-    denominator = min(len(s1), len(s2))
-    return 1.0 if denominator == 0 else diff / denominator
+    return stringdist.levenshtein_norm(s1, s2)
+
+  @classmethod
+  def tokenize(cls, text: str) -> list[str]:
+    """Extracts lowercased alphanumeric tokens from text."""
+    if not text:
+      return []
+    return _TOKEN_PATTERN.findall(str(text).lower())
+
+  @classmethod
+  def compute_fuzzy_token_overlap(
+      cls,
+      query: str,
+      target: str,
+      threshold: float = NORMALIZED_LEVENSHTEIN_THRESHOLD,
+  ) -> float:
+    """Computes directional fuzzy token overlap of query in target (0.0 to 1.0).
+
+    Extracts alphanumeric tokens from query and calculates the fraction that
+    match any token in target (either exactly, or within a normalized
+    Levenshtein distance threshold).
+    """
+    q_tokens = cls.tokenize(query)
+    if not q_tokens:
+      return 0.0
+    t_tokens = set(cls.tokenize(target))
+    if not t_tokens:
+      return 0.0
+
+    matched_count = 0
+    for q in q_tokens:
+      if q in t_tokens:
+        matched_count += 1
+        continue
+      # Note: Early-terminates upon finding the first valid match <= threshold.
+      # Target tokens are not consumed (many-to-one matching). Potential future
+      # improvement: 1-to-1 bipartite matching or greedy best-match assignment
+      # if duplicate query tokens ever require distinct target counterparts.
+      if any(
+          abs(len(q) - len(t)) / max(len(q), len(t)) <= threshold
+          and cls.normalized_levenshtein_distance(q, t) <= threshold
+          for t in t_tokens
+      ):
+        matched_count += 1
+    return matched_count / len(q_tokens)
+
+  @classmethod
+  def get_similarity_ratio(cls, str1: str, str2: str) -> float:
+    """Returns distance ratio between str1 (query) and str2 (target).
+
+    Defined as 1.0 - fuzzy_token_overlap(str1, str2) so 0.0 indicates a perfect
+    match.
+    """
+    return 1.0 - cls.compute_fuzzy_token_overlap(str1, str2)
 
   @classmethod
   def compute_anagram_signature(cls, text: str) -> str:

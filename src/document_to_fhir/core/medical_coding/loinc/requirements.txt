@@ -7,3 +7,4 @@ litellm
 pydantic
 requests
 tenacity
+stringdist

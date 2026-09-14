@@ -14,6 +14,7 @@
 """Engine for querying the LOINC Knowledgebase based on lab test criteria."""
 
 import abc
+import math
 
 from src.document_to_fhir.common.schema import resources
 from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import index as core_analyte_index_lib
@@ -24,6 +25,13 @@ from src.document_to_fhir.core.medical_coding.loinc.common import schema
 from src.document_to_fhir.core.medical_coding.loinc.common import utils
 
 _DEFAULT_RANK = 99999
+
+
+def _get_rank(record: schema.LoincRow) -> int:
+  """Returns integer LOINC rank or default rank if missing/invalid."""
+  if record.common_test_rank is not None and int(record.common_test_rank) > 0:
+    return int(record.common_test_rank)
+  return _DEFAULT_RANK
 
 
 class BaseLOINCQueryEngine(abc.ABC):
@@ -161,35 +169,32 @@ class LaboratoryLoincQueryEngine(BaseLOINCQueryEngine):
   def _rank_candidates(
       self, records: list[schema.LoincRow], raw_test_name: str
   ) -> list[schema.LoincRow]:
-    """Sorts candidates by name similarity and LOINC rank."""
+    """Sorts candidates by fuzzy token overlap with raw_test_name and damped log-rank prior."""
     if not raw_test_name:
-      # If no test name, just sort by rank
-      return sorted(
-          records,
-          key=lambda record: int(record.common_test_rank)
-          if record.common_test_rank is not None
-          else _DEFAULT_RANK,
-      )
+      # If no test name, just sort by rank ascending
+      return sorted(records, key=_get_rank)
+
+    query_tokens = utils.StringUtils.tokenize(raw_test_name)
+    num_query_tokens = max(1, len(query_tokens))
+    # Bounded scaling factor guarantees rank_prior < 1 / num_query_tokens,
+    # ensuring rank acts strictly as a tie-breaker regardless of query length.
+    max_rank_boost = 0.05 / (num_query_tokens + 1)
 
     scored_records = []
 
     for rec in records:
-      score = 1.0
-      if raw_test_name:
-        row_long_name = rec.long_common_name or ""
-        score = utils.StringUtils.get_similarity_ratio(
-            raw_test_name, row_long_name
-        )
-      scored_records.append((score, rec))
+      target_text = (
+          f"{rec.core_analyte or ''} {rec.long_common_name or ''}".strip()
+      )
+      overlap = utils.StringUtils.compute_fuzzy_token_overlap(
+          raw_test_name, target_text
+      )
+      rank = _get_rank(rec)
+      rank_prior = max_rank_boost / math.log2(1 + rank)
+      total_score = overlap + rank_prior
+      scored_records.append((total_score, rank, rec))
 
-    # Sort by Similarity Score (Asc) then by Rank (Asc)
-    scored_records.sort(
-        key=lambda x: (
-            x[0],
-            int(x[1].common_test_rank)
-            if x[1].common_test_rank is not None
-            else _DEFAULT_RANK,
-        )
-    )
+    # Sort by total_score descending, tie-breaking by rank ascending
+    scored_records.sort(key=lambda x: (-x[0], x[1]))
 
-    return [item[1] for item in scored_records]
+    return [item[2] for item in scored_records]

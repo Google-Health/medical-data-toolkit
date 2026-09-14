@@ -2042,6 +2042,9 @@ sniffio==1.3.1 \
 stringcase==1.2.0 \
     --hash=sha256:48a06980661908efe8d9d34eab2b6c13aefa2163b3ced26972902e3bdfd87008
     # via -r requirements.in
+stringdist==1.0.9 \
+    --hash=sha256:91e6d4a348223db094d029e7e3de9ce89c561738047555dfad60ff5ccb7a5b74
+    # via -r requirements.in
 tenacity==9.1.4 \
     --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55 \
     --hash=sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
