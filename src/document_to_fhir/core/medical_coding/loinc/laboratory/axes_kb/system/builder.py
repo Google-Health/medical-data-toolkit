@@ -14,7 +14,6 @@
 """Builds a Knowledge Base for System synonyms using an LLM."""
 
 import concurrent.futures
-import json
 
 from absl import logging
 import pandas
@@ -22,8 +21,8 @@ import tqdm.auto
 
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.core.medical_coding.loinc import config
-from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system import prompt as prompt_lib
 from src.document_to_fhir.core.medical_coding.loinc.common import utils
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system import prompt as prompt_lib
 
 
 class SystemKBBuilder:
@@ -34,10 +33,12 @@ class SystemKBBuilder:
       df_loinc: pandas.DataFrame,
       client: model_client.LLMClient,
       workers: int,
+      max_attempts: int = 4,
   ):
     self.df_loinc = df_loinc
     self.client = client
     self.workers = workers
+    self.max_attempts = max_attempts
 
   def build_kb(self, save_csv_path: str):
     """Generates system synonyms and saves to CSV."""
@@ -62,7 +63,7 @@ class SystemKBBuilder:
     try:
       with tqdm.auto.tqdm(
           total=len(unique_systems),
-          desc="Processing Systems",
+          desc="Building System KB",
           unit="system",
       ) as pbar:
         for future in concurrent.futures.as_completed(future_to_system):
@@ -90,8 +91,20 @@ class SystemKBBuilder:
   def _process_single_system(self, system: str) -> list[str]:
     """Queries Gemini for a single system."""
     prompt = prompt_lib.PROMPT_TEMPLATE.format(item=system)
-    response = self.client.generate_content(contents=[prompt])
-    result = utils.StringUtils.extract_json_list_from_llm_response(
-        response.text
-    )
-    return result
+    for attempt in range(max(1, self.max_attempts)):
+      try:
+        response = self.client.generate_content(contents=[prompt])
+        return utils.StringUtils.extract_json_list_from_llm_response(
+            response.text
+        )
+      except Exception as e:  # pylint: disable=broad-exception-caught
+        if attempt == max(1, self.max_attempts) - 1:
+          raise
+        logging.warning(
+            "Attempt %d/%d failed for system %s: %s",
+            attempt + 1,
+            self.max_attempts,
+            system,
+            e,
+        )
+    return []

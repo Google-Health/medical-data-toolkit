@@ -41,33 +41,37 @@ class PropertyKBBuilder:
       df_loinc: pandas.DataFrame,
       client: model_client.LLMClient,
       workers: int = 10,
+      max_attempts: int = 4,
   ):
     self.df_loinc = df_loinc
     self.client = client
     self.workers = workers
+    self.max_attempts = max_attempts
 
   def _process_single_unit(self, unit: str) -> tuple[str, list[str]]:
     """Queries Gemini for synonyms of a single unit."""
     prompt = prompt_lib.PROMPT_TEMPLATE.format(unit=unit)
-    try:
-      response = self.client.generate_content(contents=[prompt])
-    except Exception as e:  # pylint: disable=broad-exception-caught
-      # The LLMClient is pluggable and can raise various types of exceptions
-      # (network errors, API limits, etc.) depending on the implementation.
-      logging.error("Error querying LLM for unit %s: %s", unit, e)
-      return unit, []
-
-    try:
-      synonyms = json.loads(
-          llm_util.extract_json_list_from_llm_response(response.text)
-      )
-    except (ValueError, json.JSONDecodeError, TypeError) as e:
-      logging.error("Error parsing LLM response for unit %s: %s", unit, e)
-      return unit, []
-
-    if unit not in synonyms:
-      synonyms.append(unit)
-    return unit, synonyms
+    for attempt in range(max(1, self.max_attempts)):
+      try:
+        response = self.client.generate_content(contents=[prompt])
+        synonyms = json.loads(
+            llm_util.extract_json_list_from_llm_response(response.text)
+        )
+        if unit not in synonyms:
+          synonyms.append(unit)
+        return unit, synonyms
+      except Exception as e:  # pylint: disable=broad-exception-caught
+        logging.warning(
+            "Attempt %d/%d failed for unit %s: %s",
+            attempt + 1,
+            self.max_attempts,
+            unit,
+            e,
+        )
+    logging.error(
+        "Failed to process unit %s after %d attempts.", unit, self.max_attempts
+    )
+    return unit, []
 
   def _extract_unit_to_properties(self) -> dict[str, set[str]]:
     """Extracts mapping from UCUM unit to canonical LOINC properties."""
@@ -133,7 +137,8 @@ class PropertyKBBuilder:
       for future in tqdm.auto.tqdm(
           concurrent.futures.as_completed(futures),
           total=len(units_to_process),
-          desc="Parsing units via LLM",
+          desc="Building Property KB",
+          unit="unit",
       ):
         unit, synonyms = future.result()
         unit_to_synonyms[unit] = synonyms

@@ -2,7 +2,9 @@ You are a medical data extractor. Digitize this Immunization.
 Extract the patient name as [first name] [last name].
 
 Guidelines:
-1. For optional fields (like email, fax, website in contact), if they are not present in the document, set them to null.
-2. Always convert dates and times to standard ISO 8601 format (e.g., `YYYY-MM-DDTHH:MM:SSZ`). For example, convert "25/06/2026 12:57PM" to "2026-06-25T12:57:00Z". If time is not provided, use `YYYY-MM-DD`.
-3. Ensure the JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.
-4. Always close all opened braces (e.g., `}`, `]`) correctly.
+1. If multiple vaccines are administered at the same time, make sure to extract them as INDIVIDUAL vaccines instead of combining them.
+2. Extract the dosage to the `dosage` field. OMIT the dosage in the `vaccine_name` field.
+3. For optional fields (like email, fax, website in contact), if they are not present in the document, set them to null.
+4. Always convert dates and times to standard ISO 8601 format (e.g., `YYYY-MM-DDTHH:MM:SSZ`). For example, convert "25/06/2026 12:57PM" to "2026-06-25T12:57:00Z". If time is not provided, use `YYYY-MM-DD`.
+5. Ensure the JSON is well-formed, complete, and compact (without indentation or newlines). Do not add extra whitespaces or newlines at the end of the JSON.
+6. Always close all opened braces (e.g., `}`, `]`) correctly.

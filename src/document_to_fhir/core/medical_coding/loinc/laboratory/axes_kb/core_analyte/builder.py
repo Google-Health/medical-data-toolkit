@@ -266,7 +266,7 @@ class AnalyteKBBuilder:
         with tqdm.auto.tqdm(
             total=total_tasks,
             desc=(
-                "Processing LOINC Batches (Attempt"
+                "Building Core Analyte KB (Attempt"
                 f" {attempt + 1}/{max_attempts})"
             ),
             unit="batch",
@@ -365,10 +365,13 @@ class AnalyteKBBuilder:
               config.LOINC_NUM_KEY: record.get(config.LOINC_NUM_KEY),
           })
         else:
+          strict_synonyms = analyte_info.get(config.STRICT_SYNONYMS_KEY, [])
+          lenient_synonyms = analyte_info.get(config.LENIENT_SYNONYMS_KEY, [])
           results.append({
               # LLM Derived Data
               config.CORE_ANALYTE_KEY: core,
-              config.SYNONYMS_KEY: analyte_info.get(config.SYNONYMS_KEY, []),
+              config.STRICT_SYNONYMS_KEY: strict_synonyms,
+              config.LENIENT_SYNONYMS_KEY: lenient_synonyms,
               # Original Metadata (Needed for filtering in the Query Engine)
               config.LOINC_NUM_KEY: record.get(config.LOINC_NUM_KEY),
               config.COMPONENT_KEY: record.get(config.COMPONENT_KEY),

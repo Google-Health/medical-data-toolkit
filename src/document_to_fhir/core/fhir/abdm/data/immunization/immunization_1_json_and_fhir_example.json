@@ -25,6 +25,7 @@
       {
         "vaccine_name": "Covaxin",
         "vaccine_code": "1119349007",
+        "vaccine_code_name": "Severe acute respiratory syndrome coronavirus 2 antigen",
         "date": "2026-01-01"
       }
     ]
@@ -251,10 +252,10 @@
               {
                 "system": "http://snomed.info/sct",
                 "code": "1119349007",
-                "display": "Covaxin"
+                "display": "Severe acute respiratory syndrome coronavirus 2 antigen"
               }
             ],
-            "text": "Covaxin"
+            "text": "Severe acute respiratory syndrome coronavirus 2 antigen"
           },
           "patient": {
             "reference": "urn:uuid:c306296f-3e76-4958-9a3a-f44f213c6183"

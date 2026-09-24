@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""CLI binary for building the LOINC Analyte Knowledge Base."""
+"""CLI binary for building the LOINC Axis Knowledge Bases."""
 
 import datetime
 import os
@@ -20,12 +20,22 @@ import pathlib
 from absl import app
 from absl import flags
 from absl import logging
+import pandas
 
 from src.document_to_fhir.common import model_client
 from src.document_to_fhir.core.medical_coding.loinc.common import utils
 from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import builder
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.property import builder as property_builder
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.system import builder as system_builder
 
 
+_SUPPORTED_AXES = ("core_analyte", "property", "system")
+
+_AXES = flags.DEFINE_list(
+    "axes",
+    ["core_analyte"],
+    "List of axes to build ('core_analyte', 'property', 'system', or 'all').",
+)
 _LOINC_CSV_PATH = flags.DEFINE_string(
     "loinc_csv_path",
     None,
@@ -91,39 +101,107 @@ _FILENAME_SUFFIX = flags.DEFINE_string(
 )
 
 
+def _resolve_axes(requested_axes: list[str]) -> list[str]:
+  """Validates and expands requested axes, failing fast on unrecognized values."""
+  normalized = [axis.strip().lower() for axis in requested_axes if axis.strip()]
+  if not normalized:
+    raise app.UsageError("At least one axis must be specified via --axes.")
+
+  valid_options = set(_SUPPORTED_AXES) | {"all"}
+  invalid_axes = [axis for axis in normalized if axis not in valid_options]
+  if invalid_axes:
+    raise app.UsageError(
+        f"Unknown axis: {', '.join(invalid_axes)}. Supported:"
+        f" {', '.join(_SUPPORTED_AXES)}, all"
+    )
+
+  if "all" in normalized:
+    return list(_SUPPORTED_AXES)
+  return list(dict.fromkeys(normalized))
+
+
+def _get_output_filename(axis: str, date_str: str) -> str:
+  """Constructs standard output filename for a given axis."""
+  input_basename = pathlib.Path(_LOINC_CSV_PATH.value).stem
+  sanitized_model = _MODEL_NAME.value.replace("/", "_").replace(":", "_")
+
+  if axis == "core_analyte":
+    filename_parts = [
+        "analyte_records",
+        input_basename,
+        f"top_{_MAX_RANK.value}",
+    ]
+  else:
+    filename_parts = [f"loinc_axis_{axis}_kb_top_{_MAX_RANK.value}"]
+
+  if _LIMIT.value > 0:
+    filename_parts.append(f"limit_{_LIMIT.value}")
+  filename_parts.extend([_CLIENT_TYPE.value, sanitized_model, date_str])
+  if _FILENAME_SUFFIX.value:
+    filename_parts.append(_FILENAME_SUFFIX.value)
+  return "__".join(filename_parts) + ".csv"
+
+
+def _build_axis(
+    axis: str,
+    df_loinc: pandas.DataFrame,
+    llm_client: model_client.LLMClient,
+    date_str: str,
+) -> None:
+  """Builds a single LOINC axis knowledge base using the configured builder."""
+  if axis not in _SUPPORTED_AXES:
+    raise app.UsageError(
+        f"Unknown axis: {axis}. Supported: {', '.join(_SUPPORTED_AXES)}, all"
+    )
+
+  filename = _get_output_filename(axis, date_str)
+  output_path = pathlib.Path(_OUTPUT_CSV_FOLDER.value) / filename
+  logging.info(
+      "Target output path for '%s' resolved to: %s", axis, output_path
+  )
+
+  logging.info(
+      "Starting '%s' KB build with %d workers...", axis, _WORKERS.value
+  )
+  if axis == "core_analyte":
+    builder_instance = builder.AnalyteKBBuilder(
+        df_loinc=df_loinc,
+        client_inst=llm_client,
+        workers=_WORKERS.value,
+        batch_size=_BATCH_SIZE.value,
+        max_attempts=_MAX_ATTEMPTS.value,
+    )
+    builder_instance.build_kb(
+        save_csv_path=str(output_path), resume=_RESUME.value
+    )
+  elif axis == "property":
+    builder_instance = property_builder.PropertyKBBuilder(
+        df_loinc=df_loinc,
+        client=llm_client,
+        workers=_WORKERS.value,
+        max_attempts=_MAX_ATTEMPTS.value,
+    )
+    builder_instance.build_kb(
+        save_csv_path=str(output_path), resume=_RESUME.value
+    )
+  elif axis == "system":
+    builder_instance = system_builder.SystemKBBuilder(
+        df_loinc=df_loinc,
+        client=llm_client,
+        workers=_WORKERS.value,
+        max_attempts=_MAX_ATTEMPTS.value,
+    )
+    builder_instance.build_kb(save_csv_path=str(output_path))
+
+
 def main(argv):
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
 
+  axes_to_run = _resolve_axes(_AXES.value)
+
   # Construct filename based on flags and date
-  date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-  filename_parts = ["analyte_records"]
-
-  # Include input file name without extension
-  input_basename = pathlib.Path(_LOINC_CSV_PATH.value).stem
-  filename_parts.append(input_basename)
-
-  filename_parts.append(f"top_{_MAX_RANK.value}")
-
-  if _LIMIT.value > 0:
-    filename_parts.append(f"limit_{_LIMIT.value}")
-
-  filename_parts.append(_CLIENT_TYPE.value)
-
-  # Sanitize model name just in case it contains slashes or colons
-  sanitized_model = _MODEL_NAME.value.replace("/", "_").replace(":", "_")
-  filename_parts.append(sanitized_model)
-
-  filename_parts.append(date_str)
-
-  if _FILENAME_SUFFIX.value:
-    filename_parts.append(_FILENAME_SUFFIX.value)
-
-  filename = "__".join(filename_parts) + ".csv"
-
-  output_path = pathlib.Path(_OUTPUT_CSV_FOLDER.value) / filename
-  logging.info("Target output path resolved to: %s", output_path)
+  date_str = datetime.datetime.now().strftime("%Y%m%d")
 
   additional_loinc_codes = None
   if _ADDITIONAL_LOINC_CODES_FILE.value:
@@ -147,6 +225,7 @@ def main(argv):
 
   if df_loinc is None or df_loinc.empty:
     logging.error("Failed to load any records. Check path and criteria.")
+    return
 
   logging.info(
       "Initializing %s client using model: %s",
@@ -162,18 +241,8 @@ def main(argv):
   except ValueError as e:
     raise app.UsageError(repr(e)) from e
 
-  logging.info("Starting build with %d workers...", _WORKERS.value)
-  builder_instance = builder.AnalyteKBBuilder(
-      df_loinc=df_loinc,
-      client_inst=llm_client,
-      workers=_WORKERS.value,
-      batch_size=_BATCH_SIZE.value,
-      max_attempts=_MAX_ATTEMPTS.value,
-  )
-
-  builder_instance.build_kb(
-      save_csv_path=str(output_path), resume=_RESUME.value
-  )
+  for axis in axes_to_run:
+    _build_axis(axis, df_loinc, llm_client, date_str)
   logging.info("Execution completed.")
 
 

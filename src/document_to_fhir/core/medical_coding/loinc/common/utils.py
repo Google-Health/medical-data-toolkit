@@ -35,7 +35,8 @@ NORMALIZED_LEVENSHTEIN_THRESHOLD = 0.15
 
 def read_csv(filepath: str, **kwargs: Any) -> pandas.DataFrame:
   """Reads a CSV into a pandas DataFrame using central open_file."""
-  with open_file(filepath, "r") as f:
+  encoding = kwargs.pop("encoding", None)
+  with open_file(filepath, "r", encoding=encoding) as f:
     return pandas.read_csv(f, **kwargs)
 
 

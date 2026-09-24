@@ -8,7 +8,7 @@ Guidelines:
 4. Always close all opened braces (e.g., `}`, `]`) correctly.
 
 Core-Analyte Definition:
-The Core Analyte is the unique physiological entity or chemical substance measured, entirely independent of specimen, method, or timing. Follow these strict rules to construct it:
+The Core Analyte is the unique physiological entity, chemical substance, or clinical concept measured, entirely independent of specimen, method, or timing. Follow these strict rules to construct it:
 *   **Formatting & Noise Removal:**
    *   **Standardize Casing:** Use Standard Scientific Capitalization (e.g., "HbA1c", "pH", "d-Dimer", "Free T4").
    *   **Standardize Terminology:** Convert colloquial, informal, or historical laboratory terms into their most universally accepted formal clinical nomenclature (e.g., normalize "Blood Sugar" to "Glucose", and "Red Blood Corpuscles" to "Erythrocytes").
@@ -18,6 +18,5 @@ The Core Analyte is the unique physiological entity or chemical substance measur
    *   **Synonyms & Subtypes (Keep One):** If a slash simply implies alternative names or subtypes rather than a true ratio, extract ONLY the primary scientific name (e.g., "PCV/Hematocrit" -> "Hematocrit", "Protein/Albumin" -> "Albumin").
 *   **Essential Modifiers:**
    *   Preserve essential chemical states and clinical modifiers. Do NOT strip them down to generic roots (e.g., keep "Direct Bilirubin", "Non-HDL Cholesterol", "Transferrin Saturation").
-*   **Base Entities for Indices:**
-   *   For clinical indices and calculated parameters (e.g., MCHC, MCV, MPV, RDW), extract the **fundamental biological entity**. DROP the descriptive measurement modifiers (e.g., 'Mean', 'Corpuscular', 'Concentration', 'Volume', 'Width', 'Distribution').
-   *   *Examples:* "MCHC" -> "Hemoglobin" | "MCV" -> "Erythrocytes" | "MPV" -> "Platelets".
+*   **Clinical Indices as Autonomous Concepts:**
+   *   For clinical indices and calculated parameters (e.g., MCHC, MCV, MPV, RDW, PCT), do NOT collapse them into generic cell counts or whole blood proteins. Preserve them as their standard clinical concepts (e.g., "MCHC", "Mean Corpuscular Volume", "MPV", "Red Cell Distribution Width", "Plateletcrit").

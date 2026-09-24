@@ -37,8 +37,7 @@ The "Core Analyte" is the unique physiological entity, chemical substance, or cl
 * **The Compound Exception:** If the text contains a plus sign (`+`) indicating multiple targets, you must **preserve all parts** (e.g., keep "HIV 1+2").
 
 **Step 2: Indices, Modifiers, and Microbiology**
-* **Base Entities for Indices:** For clinical indices and calculated parameters (e.g., MCHC, MCV, MPV, RDW), extract the **fundamental biological entity**. DROP the descriptive measurement modifiers (e.g., 'Mean', 'Corpuscular', 'Concentration', 'Volume', 'Width', 'Distribution').
-    * *Examples:* "MCHC" -> "Hemoglobin" | "MCV" -> "Erythrocytes" | "MPV" -> "Platelets".
+* **Clinical Indices as Autonomous Concepts:** For clinical indices and calculated parameters (e.g., MCHC, MCV, MPV, RDW, PCT, PDW, P-LCR, P-LCC), do NOT collapse them into generic cell counts or whole blood proteins. Preserve them as their standard clinical concepts (e.g., "MCHC", "Mean Corpuscular Volume", "Mean Platelet Volume", "Red Cell Distribution Width", "Plateletcrit").
 * **Dot Notation:** If the name contains a dot (e.g., `Calcium.ionized`), treat the part after the dot as a mandatory adjective (Output: "Ionized Calcium").
 * **Genetic Targets:** Always preserve terms like "DNA", "RNA", "Ag" (Antigen), and "Ab" (Antibody).
 * **Microbiology Fallback:** If the `COMPONENT` is vague (e.g., "Bacteria identified"), look at the `LONG_COMMON_NAME` field to find the specific organism.
@@ -56,26 +55,33 @@ The "Core Analyte" is the unique physiological entity, chemical substance, or cl
 ---
 
 ### PART 3: INSTRUCTIONS FOR SYNONYMS
-Using the `core_analyte` you identified, generate a strictly curated list of up to 10 valid clinical synonyms.
+Using the `core_analyte` you identified, generate two separate, strictly curated lists of clinical synonyms:
 
-**1. Combine Provided Data with Your Expert Memory:**
-Review the `RELATEDNAMES2`, `SHORTNAME`, and `LONG_COMMON_NAME` fields for inspiration (e.g., abbreviations, alternate chemical names). However, **do not just copy them blindly**. Rely on your own clinical knowledge to generate and select only the best, most universally recognized synonyms.
+**A. Strict Synonyms (`strict_synonyms`):**
+Exact 1:1 clinical aliases, recognized universal acronyms, orthographic variants, and direct abbreviations that refer unambiguously to this specific analyte:
+* Examples:
+  - Plateletcrit -> ["Platelet Volume Fraction", "Plt Crit", "Platelet Crit", "Thrombocrit", "PCT"]
+  - Direct Bilirubin -> ["Conjugated Bilirubin", "Bilirubin Direct", "Direct Bili", "DBIL"]
+  - MCHC -> ["Mean Corpuscular Hemoglobin Concentration", "Mean Cell Hemoglobin Concentration", "MCHC"]
+  - MCV -> ["Mean Corpuscular Volume", "Mean Cell Volume", "Erythrocyte Mean Volume", "MCV"]
+  - Free Thyroxine -> ["Free T4", "FT4", "Unbound Thyroxine"]
+  - Hemoglobin -> ["Hgb", "Hb", "Haemoglobin"]
+* The "EMR Search Bar" Heuristic: If a clinician searches this exact term in an EMR or lab catalog, does it unambiguously refer to this specific test?
 
-**2. The "EMR Search Bar" Heuristic:**
-Ask yourself: *"If a busy clinician types this exact term into an EMR search bar to find this test, is it standard medical shorthand?"*
-* Allow valid clinical abbreviations (e.g., "WBC", "Leuk", "K", "T4").
-* Discard patient slang (e.g., "Sugar Test", "Good Cholesterol").
-
-**3. Aggressively Filter LOINC Noise:**
-The `RELATEDNAMES2` field contains massive amounts of non-analyte metadata. You MUST completely ignore:
-* **Measurement Nouns & Scales:** "QNT", "Absolute", "Count", "Level", "Ratio", "Number concentration", "Cnt".
-* **Routine Specimens:** "Blood", "Serum", "Urine", "WB", "Plasma" (Exception: Only keep if it forms a strict idiom like "BUN" or "Blood Gas").
-* **Methods & Timing:** "Auto", "Automated detection", "Point in time", "Random", "PCR", "Screen".
-* **Categories:** "UniversalLabOrders", "Chemistry", "HEMATOLOGY".
-
-**4. Strict Exclusions (No Redundancy):**
-* **No Plurals/Casing Variants:** If you output "WBC", do not add "WBCs". If you output "White blood cell", do not add "White blood cells".
-* **No Appended Nouns:** Do not add descriptive nouns to the synonym (e.g., keep "WBC", do NOT add "WBC Count").
+**B. Lenient Synonyms (`lenient_synonyms`):**
+The immediate PARENT core-analyte, unfractionated base chemical compound, or underlying cellular entity (biological hypernyms) that allows fallback retrieval if a query only identifies the base substance:
+* Examples:
+  - Plateletcrit -> ["Platelets", "Thrombocytes"] (parent cell)
+  - Direct Bilirubin -> ["Bilirubin", "Total Bilirubin"] (parent compound)
+  - MCV -> ["Erythrocytes", "Red Blood Cells", "RBC"] (parent cell)
+  - MCHC -> ["Hemoglobin", "Erythrocytes"] (parent protein/cell)
+  - Free Thyroxine -> ["Thyroxine", "T4"] (parent hormone)
+  - Ionized Calcium -> ["Calcium"] (parent mineral)
+* STRICT EXCLUSIONS:
+  - NEVER include panel names or test batteries (e.g., NO "CBC", "LFT", "CMP", "BMP", "Lipid Profile").
+  - NEVER include specimen types or body fluids (e.g., NO "Serum", "Plasma", "Blood", "Urine").
+  - NEVER include measurement units or properties (e.g., NO "Count", "Level", "Concentration", "Ratio").
+  - NEVER include sibling or coordinate tests (e.g., Direct Bilirubin must NOT include "Indirect Bilirubin"; MCV must NOT include "MCH").
 
 ---
 
@@ -91,8 +97,9 @@ Each object in the array must follow this structure:
     "LOINC_NUM": "The LOINC_NUM of the input record",
     "analysis_reasoning": "Explain step-by-step how you derived the core analyte and what you stripped.",
     "core_analyte": "The final normalized string",
-    "synonym_reasoning": "Explain why you selected these specific synonyms and excluded others.",
-    "synonyms": ["Synonym 1", "Synonym 2", ...]
+    "synonym_reasoning": "Explain why you selected these specific strict and lenient synonyms and how you decided to partition them.",
+    "strict_synonyms": ["Strict 1", "Strict 2", ...],
+    "lenient_synonyms": ["Lenient 1", "Lenient 2", ...]
   }}
 ]
 ```

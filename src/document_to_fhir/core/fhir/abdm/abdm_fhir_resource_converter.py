@@ -814,13 +814,13 @@ def create_immunization(
   if encounter_uri_ref:
     imm.encounter.uri.value = encounter_uri_ref
 
-  if immunization.vaccine_code and immunization.vaccine_name:
+  if immunization.vaccine_code and immunization.vaccine_code_name:
     imm.vaccine_code.coding.add(
         system=datatypes_pb2.Uri(value="http://snomed.info/sct"),
         code=datatypes_pb2.Code(value=immunization.vaccine_code),
-        display=datatypes_pb2.String(value=immunization.vaccine_name),
+        display=datatypes_pb2.String(value=immunization.vaccine_code_name),
     )
-    imm.vaccine_code.text.value = immunization.vaccine_name
+    imm.vaccine_code.text.value = immunization.vaccine_code_name
   elif immunization.vaccine_name:
     imm.vaccine_code.text.value = immunization.vaccine_name
 

@@ -233,58 +233,75 @@ class LaboratoryLoincQueryEngineScaleTest(absltest.TestCase):
         core_analyte='Glucose', result='100.5', name=''
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 1)
+    self.assertLen(results, 2)
     self.assertEqual(results[0].scale_typ, 'Qn')
     self.assertEqual(results[0].loinc_num, '1')
+    self.assertEqual(results[1].scale_typ, 'Ord')
+    self.assertEqual(results[1].loinc_num, '2')
 
   def test_query_with_text_result_picks_ord(self):
     test_input = resources.LabTest(core_analyte='Glucose', result='++', name='')
     results = self.engine.query(test_input)
-    self.assertLen(results, 1)
+    self.assertLen(results, 2)
     self.assertEqual(results[0].scale_typ, 'Ord')
     self.assertEqual(results[0].loinc_num, '2')
+    self.assertEqual(results[1].scale_typ, 'Nom')
+    self.assertEqual(results[1].loinc_num, '3')
 
   def test_query_with_modified_numeric_result_picks_qn(self):
     test_input = resources.LabTest(
         core_analyte='Glucose', result='< 0.35', name=''
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 3)
-    loinc_nums = [r.loinc_num for r in results]
-    self.assertIn('2', loinc_nums)
-    self.assertIn('3', loinc_nums)
-    self.assertIn('4', loinc_nums)
+    self.assertLen(results, 2)
+    self.assertEqual(results[0].scale_typ, 'Qn')
+    self.assertEqual(results[0].loinc_num, '1')
+    self.assertEqual(results[1].scale_typ, 'Ord')
+    self.assertEqual(results[1].loinc_num, '2')
 
   def test_query_with_range_result_picks_qn(self):
     test_input = resources.LabTest(
         core_analyte='Glucose', result='10 - 20', name=''
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 3)
-    loinc_nums = [r.loinc_num for r in results]
-    self.assertIn('2', loinc_nums)
-    self.assertIn('3', loinc_nums)
-    self.assertIn('4', loinc_nums)
+    self.assertLen(results, 2)
+    self.assertEqual(results[0].scale_typ, 'Qn')
+    self.assertEqual(results[0].loinc_num, '1')
+    self.assertEqual(results[1].scale_typ, 'Ord')
+    self.assertEqual(results[1].loinc_num, '2')
 
   def test_query_with_positive_result_picks_ord(self):
     test_input = resources.LabTest(
         core_analyte='Glucose', result='Positive', name=''
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 1)
+    self.assertLen(results, 2)
     self.assertEqual(results[0].scale_typ, 'Ord')
     self.assertEqual(results[0].loinc_num, '2')
+    self.assertEqual(results[1].scale_typ, 'Nom')
+    self.assertEqual(results[1].loinc_num, '3')
+
+  def test_query_with_adequacy_result_picks_ord(self):
+    for result_string in (
+        'Adequate',
+        'ADEQUATE ON SMEAR.',
+        'Mild Thrombocytopenia',
+    ):
+      test_input = resources.LabTest(
+          core_analyte='Glucose', result=result_string, name=''
+      )
+      results = self.engine.query(test_input)
+      self.assertEqual(results[0].scale_typ, 'Ord')
+      self.assertEqual(results[0].loinc_num, '2')
 
   def test_query_with_short_text_result_picks_nom(self):
     test_input = resources.LabTest(
         core_analyte='Glucose', result='Staphylococcus aureus', name=''
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 3)
-    loinc_nums = [r.loinc_num for r in results]
-    self.assertIn('2', loinc_nums)
-    self.assertIn('3', loinc_nums)
-    self.assertIn('4', loinc_nums)
+    self.assertLen(results, 1)
+    self.assertEqual(results[0].scale_typ, 'Nom')
+    self.assertEqual(results[0].loinc_num, '3')
 
   def test_query_with_long_text_result_picks_nar(self):
     test_input = resources.LabTest(
@@ -293,9 +310,8 @@ class LaboratoryLoincQueryEngineScaleTest(absltest.TestCase):
         name='',
     )
     results = self.engine.query(test_input)
-    self.assertLen(results, 3)
+    self.assertLen(results, 2)
     loinc_nums = [r.loinc_num for r in results]
-    self.assertIn('2', loinc_nums)
     self.assertIn('3', loinc_nums)
     self.assertIn('4', loinc_nums)
 
@@ -404,7 +420,69 @@ class LaboratoryLoincQueryEngineIntegrationTest(absltest.TestCase):
     )
     results = self.engine.query(test_input)
     self.assertLen(results, 1)
-    self.assertEqual(results[0].loinc_num, '1')
+    self.assertEqual(results[0].loinc_num, '2')
+
+
+class ScaleMapperTest(absltest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.mapper = scale_mapper_lib.ScaleMapper()
+
+  def test_empty_and_none_returns_all_scales(self):
+    self.assertEqual(
+        self.mapper.get_canonical_scales(None), scale_mapper_lib.ALL_SCALES
+    )
+    self.assertEqual(
+        self.mapper.get_canonical_scales(''), scale_mapper_lib.ALL_SCALES
+    )
+    self.assertEqual(
+        self.mapper.get_canonical_scales('   '), scale_mapper_lib.ALL_SCALES
+    )
+
+  def test_phase1_exact_numeric_and_semiqn_scales(self):
+    expected = {'Qn', 'Ord', 'OrdQn', 'SemiQn'}
+    for val in ['12.5', '0', '1.0093', '< 0.5', '>=1,000', '10 - 20', '1:40']:
+      self.assertEqual(self.mapper.get_canonical_scales(val), expected)
+
+  def test_phase1_exact_ordinal_and_ast(self):
+    self.assertEqual(
+        self.mapper.get_canonical_scales('Positive'), {'Ord', 'Nom'}
+    )
+    self.assertEqual(self.mapper.get_canonical_scales('2+'), {'Ord', 'Nom'})
+    self.assertEqual(self.mapper.get_canonical_scales('(++)'), {'Ord', 'Nom'})
+    self.assertEqual(self.mapper.get_canonical_scales('+/-'), {'Ord', 'Nom'})
+    self.assertEqual(self.mapper.get_canonical_scales('±'), {'Ord', 'Nom'})
+    self.assertEqual(
+        self.mapper.get_canonical_scales('Susceptible'), {'Ord', 'OrdQn'}
+    )
+
+  def test_phase2_dirty_numeric_and_plus_with_flag_or_units(self):
+    # e.g., OCR flag attached to numeric value ("4.0092 L", "12.5 mg/dL (H)")
+    self.assertEqual(
+        self.mapper.get_canonical_scales('4.0092 L'),
+        {'Qn', 'Ord', 'OrdQn', 'SemiQn'},
+    )
+    self.assertIn('Qn', self.mapper.get_canonical_scales('12.5 mg/dL (H)'))
+    self.assertIn('Ord', self.mapper.get_canonical_scales('12.5 mg/dL (H)'))
+    self.assertIn('SemiQn', self.mapper.get_canonical_scales('12.5 mg/dL (H)'))
+    self.assertEqual(
+        self.mapper.get_canonical_scales('Protein (++)'),
+        {'Ord', 'Nom', 'Nar'},
+    )
+    self.assertEqual(
+        self.mapper.get_canonical_scales('Protein 2+'),
+        {'Ord', 'Nom', 'Nar'},
+    )
+    self.assertEqual(
+        self.mapper.get_canonical_scales('Ketones +-'),
+        {'Ord', 'Nom', 'Nar'},
+    )
+
+  def test_phase3_unrecognizable_symbols_fallback_to_all_scales(self):
+    self.assertEqual(
+        self.mapper.get_canonical_scales('???'), scale_mapper_lib.ALL_SCALES
+    )
 
 
 class UnitToPropertyMapperTest(absltest.TestCase):

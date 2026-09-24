@@ -69,22 +69,23 @@ To run the library in a standard Python environment (simulating open source):
 python -m venv venv
 source venv/bin/activate  # Or venv\Scripts\activate on Windows
 pip install -r src/document_to_fhir/core/medical_coding/loinc/requirements.txt
-python -m src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.<axis_name>.builder_main \
+python -m src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.builder_main \
+  --axes="all" \
   --loinc_csv_path="/path/to/input/LoincTable.csv" \
   --output_csv_folder="/path/to/output/folder/" \
   --client_type="litellm" \
   --model_name="gemma-4-26b-a4b-it" \
   --max_rank=2000 \
-  --workers=10
+  --workers=10 \
+  --batch_size=5 \
+  --resume
 ```
-
-Where `<axis_name>` corresponds to the axis you want to build
-(e.g., `core_analyte`, `system`, `property`).
 <!-- copybara:replace_end -->
 
 ### Configuration Flags
 | Flag | Default | Description |
 | :--- | :--- | :--- |
+| `--axes` | `core_analyte` | Comma-separated axes to build (`core_analyte`, `property`, `system`, or `all`). |
 | `--loinc_csv_path` | (Required) | Path to the source LOINC CSV. |
 | `--output_csv_folder` | (Required) | Folder where enriched CSVs are saved. |
 | `--client_type` | (Required) | Type of LLM client to use (gemini, gemma, litellm). |
@@ -94,12 +95,17 @@ Where `<axis_name>` corresponds to the axis you want to build
 | `--limit` | `0` | Max rows to process (use `0` for all). |
 | `--workers` | `10` | Number of parallel threads for enrichment. |
 | `--batch_size` | `5` | Batch size for LLM processing. Set according to LLM client limitations. |
+| `--max_attempts` | `4` | Maximum number of attempts for processing LOINC batches. |
+| `--resume` | `False` | Resume build from existing output CSV if it exists. |
+| `--additional_loinc_codes_file` | `None` | Path to a file containing additional LOINC codes to process. |
+| `--filename_suffix` | `""` | Optional suffix to add to output filenames. |
 
 ---
 
 ## 2. Runtime Querying (Online)
 
 Once the Knowledge Base is built, use the `LaboratoryLoincQueryEngine` to perform searches.
+*(Note: `AnalytesIndex.from_csv()` strictly requires two-tier Core Analyte KB CSVs containing `strict_synonyms` and `lenient_synonyms` columns; legacy single-column `synonyms` CSVs are no longer supported.)*
 
 ```python
 from document_to_fhir.common.schema import resources

@@ -45,7 +45,10 @@ class AnalytesIndex:
   """A readable, API-driven index for LOINC Analyte harmonization."""
 
   def __init__(self):
-    self._signature_to_records_index: dict[str, list[schema.LoincRow]] = (
+    self._strict_signature_to_records: dict[str, list[schema.LoincRow]] = (
+        collections.defaultdict(list)
+    )
+    self._lenient_signature_to_records: dict[str, list[schema.LoincRow]] = (
         collections.defaultdict(list)
     )
     self._loinc_to_core_analyte_map: dict[str, str] = {}
@@ -73,14 +76,26 @@ class AnalytesIndex:
     df = pandas.read_csv(csv_path)
 
     index = cls()
-    # Convert 'synonyms' column upfront if it exists.
-    if config.SYNONYMS_KEY in df.columns:
-      df[config.SYNONYMS_KEY] = df[config.SYNONYMS_KEY].apply(
+    if config.STRICT_SYNONYMS_KEY not in df.columns:
+      raise ValueError(
+          f"Missing required column '{config.STRICT_SYNONYMS_KEY}' in"
+          f" {csv_path}. Please use an updated Core Analyte KB CSV generated"
+          " with the latest core_analyte_builder_main."
+      )
+    df[config.STRICT_SYNONYMS_KEY] = df[config.STRICT_SYNONYMS_KEY].apply(
+        index._parse_synonyms
+    )
+    if config.LENIENT_SYNONYMS_KEY in df.columns:
+      df[config.LENIENT_SYNONYMS_KEY] = df[config.LENIENT_SYNONYMS_KEY].apply(
           index._parse_synonyms
       )
 
     index.load_data(df.to_dict("records"))
-    logging.info("Loaded %d terms.", len(index._signature_to_records_index))
+    logging.info(
+        "Loaded %d strict terms, %d lenient terms.",
+        len(index._strict_signature_to_records),
+        len(index._lenient_signature_to_records),
+    )
     return index
 
   def load_data(self, records: Iterable[dict[str, Any]]):
@@ -103,10 +118,27 @@ class AnalytesIndex:
         len(self._core_analyte_to_synonyms_map),
     )
 
-  def search_by_analyte(self, analyte_name: str) -> list[schema.LoincRow]:
-    """Searches the index for records matching the given analyte name."""
+  def search_by_analyte(
+      self, analyte_name: str, allow_lenient: bool = True
+  ) -> list[schema.LoincRow]:
+    """Searches the index for records matching the given analyte name.
+
+    First checks the strict index. If no candidates are found and allow_lenient
+    is True, falls back to the lenient index.
+
+    Args:
+      analyte_name: The analyte name or synonym to search for.
+      allow_lenient: Whether to fall back to the lenient index if no strict
+        match is found.
+
+    Returns:
+      A list of matching LoincRow records.
+    """
     signature = self._create_analyte_signature(analyte_name)
-    return self._signature_to_records_index.get(signature, [])
+    results = self._strict_signature_to_records.get(signature, [])
+    if not results and allow_lenient:
+      results = self._lenient_signature_to_records.get(signature, [])
+    return results
 
   def get_core_analyte(self, loinc_number: str) -> str | None:
     """Returns the core analyte mapped to a specific LOINC number."""
@@ -132,17 +164,24 @@ class AnalytesIndex:
         continue
 
       record[config.CORE_ANALYTE_KEY] = str(core_analyte)
+      for syn_key in (
+          config.STRICT_SYNONYMS_KEY,
+          config.LENIENT_SYNONYMS_KEY,
+      ):
+        if syn_key in record:
+          record[syn_key] = self._parse_synonyms(record[syn_key])
       valid_records.append(record)
 
-      synonyms = self._parse_synonyms(record.get(config.SYNONYMS_KEY))
-      self._core_analyte_to_synonyms_map[str(core_analyte)].update(synonyms)
+      strict_syns = record.get(config.STRICT_SYNONYMS_KEY) or []
+      self._core_analyte_to_synonyms_map[str(core_analyte)].update(strict_syns)
 
     return valid_records
 
   def _build_search_index(self, records: list[dict[str, Any]]):
     """Pass 2: Populate lookup tables and mapping signatures to records."""
     loinc_to_record = {}
-    signature_to_loincs = collections.defaultdict(set)
+    strict_sig_to_loincs = collections.defaultdict(set)
+    lenient_sig_to_loincs = collections.defaultdict(set)
 
     for record in records:
       core = record[config.CORE_ANALYTE_KEY]
@@ -150,16 +189,30 @@ class AnalytesIndex:
       loinc_to_record[loinc_num] = schema.LoincRow.model_validate(record)
 
       self._loinc_to_core_analyte_map[loinc_num] = core
-      all_terms = self._core_analyte_to_synonyms_map[core] | {core}
 
-      for term in all_terms:
+      # 1. Index strict terms (core analyte + harmonized strict synonyms for
+      # this exact core analyte).
+      strict_terms = {core} | self._core_analyte_to_synonyms_map[core]
+      for term in strict_terms:
         if term:
           signature = self._create_analyte_signature(term)
-          signature_to_loincs[signature].add(loinc_num)
+          strict_sig_to_loincs[signature].add(loinc_num)
+
+      # 2. Index lenient terms (broad parent substances, categories)
+      lenient_terms = set(record.get(config.LENIENT_SYNONYMS_KEY) or [])
+      for term in lenient_terms:
+        if term:
+          signature = self._create_analyte_signature(term)
+          if loinc_num not in strict_sig_to_loincs.get(signature, set()):
+            lenient_sig_to_loincs[signature].add(loinc_num)
 
     # Finalize search index by mapping signatures to record objects.
-    for signature, loinc_nums in signature_to_loincs.items():
-      self._signature_to_records_index[signature] = [
+    for signature, loinc_nums in strict_sig_to_loincs.items():
+      self._strict_signature_to_records[signature] = [
+          loinc_to_record[num] for num in loinc_nums
+      ]
+    for signature, loinc_nums in lenient_sig_to_loincs.items():
+      self._lenient_signature_to_records[signature] = [
           loinc_to_record[num] for num in loinc_nums
       ]
 

@@ -43,6 +43,7 @@ class SnomedVaccineTerminologyMapperTest(absltest.TestCase):
         code_system="SNOMED-CT",
     )
     immunization = resources.Immunization(
+        dosage_reason="",
         vaccine_name="Covaxin",
         dosage="1",
         patient_type=resources.PatientType.UNKNOWN,
@@ -56,6 +57,7 @@ class SnomedVaccineTerminologyMapperTest(absltest.TestCase):
 
   def test_map_inplace_skips_when_already_coded(self):
     immunization = resources.Immunization(
+        dosage_reason="",
         vaccine_name="Covaxin",
         dosage="1",
         patient_type=resources.PatientType.UNKNOWN,
@@ -76,6 +78,7 @@ class SnomedVaccineTerminologyMapperTest(absltest.TestCase):
         code_system=None,
     )
     immunization = resources.Immunization(
+        dosage_reason="",
         vaccine_name="Unknown Vaccine",
         dosage="1",
         patient_type=resources.PatientType.UNKNOWN,

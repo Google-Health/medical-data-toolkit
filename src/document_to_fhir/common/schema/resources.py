@@ -237,7 +237,11 @@ class LabTest(MedicalData):
   """Individual tests within a lab report."""
 
   core_analyte: str = pydantic.Field(
-      description='Core Analyte as described in the prompt.',
+      description=(
+          'The Core Analyte is the unique physiological entity or clinical'
+          ' concept measured, entirely independent of specimen, method, or'
+          ' timing. Follow the detailed description.'
+      ),
   )
   name: str = pydantic.Field(description='The formal name of the lab test.')
   result: str = pydantic.Field(
@@ -252,11 +256,32 @@ class LabTest(MedicalData):
   specimen: Optional[str] = pydantic.Field(
       default=None,
       description=(
-          'The type of biological sample (e.g., "Blood", "Serum", "Urine").'
+          'The biological material tested (e.g., "Blood", "Serum", "Plasma",'
+          ' "Red Blood Cells", "Urine"). Look in the test name itself (e.g.,'
+          ' "in Red Blood Cells", "in Serum"), in parentheses next to or below'
+          ' the test name, in a dedicated column, implied by the panel, or'
+          ' stated once for a group of tests in a section header (e.g., "URINE'
+          ' TESTS:" implies "Urine") or a "Specimen Information" note. If a'
+          ' general specimen is stated for a section or panel, apply it to'
+          ' tests within that section unless an individual test specifies its'
+          ' own more specific specimen (e.g., within the test name), in which'
+          ' case the test-specific specimen takes precedence. Use empty string'
+          ' if none.'
       ),
   )
   method: Optional[str] = pydantic.Field(
-      default=None, description='Method used for the lab test.'
+      default=None,
+      description=(
+          'The analytical method used for the lab test (e.g., "Automated'
+          ' count", "LC-MS/MS", "Spectrophotometry"). Look in the test name'
+          ' itself (e.g., "by Automated count"), in parentheses near the test'
+          ' name, on a separate line, in a dedicated column, or described for'
+          ' an entire section or panel in a header, footer, "Methodology", or'
+          ' "Notes" section. If a general method is stated for a section or'
+          ' panel, apply it to tests within that section unless an individual'
+          ' test specifies its own more specific method, in which case the'
+          ' specific method takes precedence. Use empty string if none.'
+      ),
   )
   panel_name: Optional[str] = pydantic.Field(
       default=None, description='Name of the lab panel.'
@@ -382,17 +407,28 @@ class Immunization(MedicalData):
   # 'dosage' as the first field is very useful because it directs the model to
   # decouple the dosage from the vaccine name when they are present together in
   # the record, e.g. 'Hep A1' where '1' indicates the dosage.
+  dosage_reason: str = pydantic.Field(
+      description=(
+          'Reason for setting the dosage field as 1, 2, booster etc. Usually'
+          ' the dosage would be provided as a suffix to the vaccine name like'
+          ' "Hep A-1" or "DTaP booster".'
+      ),
+  )
   dosage: str = pydantic.Field(
       description=(
           'Type of dosage e.g. 1, 2, booster etc. Use numbers or'
-          ' "booster". Set to "unknown" if not specified.'
+          ' "booster". For e.g. if the input is "Hep A1", then the dosage would'
+          ' be "1" (first dose), for "MMR-2" (second dose), the dosage would be'
+          ' "2" and so on. Set to "unknown" if not specified.'
       ),
   )
   vaccine_name: str = pydantic.Field(
       description=(
-          'Standardized name of the vaccine without dosage specified. In the'
+          'Standardized name of the vaccine WITHOUT dosage specified. In the'
           ' event that there is a choice of vaccine variations, pick the first'
-          ' one. For example, Hep A1 should be extracted as Hep A.'
+          ' one. For example, Hep A1 should be extracted as Hep A, NOT Hep A1;'
+          ' the "dosage" field should have "1" to represent that it is the'
+          ' first dose.'
       )
   )
   date: Optional[datetime.date] = pydantic.Field(
@@ -430,6 +466,9 @@ class Immunization(MedicalData):
       if not data.get('dosage'):
         data = dict(data)
         data['dosage'] = 'unknown'
+      if not data.get('dosage_reason'):
+        data = dict(data)
+        data['dosage_reason'] = ''
     return data
 
 

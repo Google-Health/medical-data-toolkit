@@ -236,5 +236,12 @@ class ImmunizationRecord(MedicalDocument):
       resources.Practitioner[resources.BasePractitionerIdentifiers]
   ] = pydantic.Field(default=None, description='Clinical Practitioner details.')
   immunizations: list[resources.Immunization] = pydantic.Field(
-      description='List of immunizations.'
+      description=(
+          'List of individual vaccine administrations. Each entry must'
+          ' represent a single administered vaccine. If a visit, table row, or'
+          ' record lists multiple co-administered vaccines, extract each'
+          ' vaccine as a separate Immunization entry with the same'
+          ' administration date. Do not combine multiple vaccines into one'
+          ' entry.'
+      )
   )

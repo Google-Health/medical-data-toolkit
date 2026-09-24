@@ -640,9 +640,11 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
 
   def test_create_immunization_full_fields(self):
     immunization = resources.Immunization(
+        dosage="1",
         vaccine_name="Covaxin",
         date=datetime.date(2026, 1, 15),
         vaccine_code="1119349007",
+        vaccine_code_name="Severe acute respiratory syndrome coronavirus 2 antigen",
     )
     imm = abdm_fhir_resource_converter.create_immunization(
         immunization=immunization,
@@ -684,11 +686,11 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
     )
     self.assertEqual(
         imm.vaccine_code.coding[0].display.value,
-        "Covaxin",
+        "Severe acute respiratory syndrome coronavirus 2 antigen",
     )
     self.assertEqual(
         imm.vaccine_code.text.value,
-        "Covaxin",
+        "Severe acute respiratory syndrome coronavirus 2 antigen",
     )
     self.assertTrue(imm.occurrence.HasField("date_time"))
     expected_us = int(
@@ -698,7 +700,11 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
     self.assertEqual(imm.occurrence.date_time.value_us, expected_us)
 
   def test_create_immunization_name_only_no_code(self):
-    immunization = resources.Immunization(vaccine_name="BCG Vaccine")
+    immunization = resources.Immunization(
+        dosage="1",
+        vaccine_name="BCG Vaccine",
+        date=datetime.date(2026, 1, 15),
+    )
     imm = abdm_fhir_resource_converter.create_immunization(
         immunization=immunization,
         immunization_id="imm-id",
@@ -718,6 +724,7 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
 
   def test_create_immunization_occurrence_date_datetime_override(self):
     immunization = resources.Immunization(
+        dosage="1",
         vaccine_name="Covishield",
         date=datetime.date(2026, 1, 1),
     )
@@ -735,6 +742,7 @@ class AbdmFhirResourceConverterTest(parameterized.TestCase):
 
   def test_create_immunization_occurrence_date_date_override(self):
     immunization = resources.Immunization(
+        dosage="1",
         vaccine_name="Covishield",
     )
     custom_date = datetime.date(2026, 3, 15)

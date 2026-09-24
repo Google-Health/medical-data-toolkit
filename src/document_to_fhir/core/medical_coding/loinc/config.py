@@ -15,7 +15,17 @@
 
 # --- CSV Column Keys ---
 CORE_ANALYTE_KEY = "core_analyte"
-SYNONYMS_KEY = "synonyms"
+
+# 1:1 clinical aliases, recognized universal acronyms, and lexical variants
+# (e.g., "PCT", "Plt Crit", "Thrombocrit" for Plateletcrit).
+# See prompt.py (PART 3) for details.
+STRICT_SYNONYMS_KEY = "strict_synonyms"
+
+# Immediate parent core-analytes / biological hypernyms (e.g., "Platelets" for
+# Plateletcrit; "Bilirubin" for Direct Bilirubin).
+# Used solely as a second-tier fallback for under-specified queries.
+# Never contains panel names (e.g. "CBC", "LFT"). See prompt.py (PART 3).
+LENIENT_SYNONYMS_KEY = "lenient_synonyms"
 LOINC_NUM_KEY = "LOINC_NUM"
 COMPONENT_KEY = "COMPONENT"
 PROPERTY_KEY = "PROPERTY"

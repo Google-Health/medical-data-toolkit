@@ -16,7 +16,7 @@
 from typing import Any
 
 
-def file_exists(filepath: str) -> bool:
+def file_exists(filepath: str | None) -> bool:
   """Checks if a file exists."""
   import os
   return bool(filepath and os.path.exists(filepath))
