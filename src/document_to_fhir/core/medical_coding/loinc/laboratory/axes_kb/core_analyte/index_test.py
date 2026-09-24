@@ -15,6 +15,7 @@
 
 from absl.testing import absltest
 from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import index
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import normalize
 
 
 class AnalytesIndexTest(absltest.TestCase):
@@ -165,6 +166,73 @@ class AnalytesIndexTest(absltest.TestCase):
 
     results = idx.search_by_analyte("Total T4")
     self.assertEqual({r.loinc_num for r in results}, {"3026-2", "14921-1"})
+
+  def test_parenthetical_modifier_matching(self):
+    records = [
+        {
+            "LOINC_NUM": "1975-2",
+            "core_analyte": "Total Bilirubin",
+            "strict_synonyms": ["Total Bilirubin", "Bilirubin Total", "TBIL"],
+            "lenient_synonyms": ["Bilirubin"],
+            "LONG_COMMON_NAME": "Bilirubin.total [Mass/volume] in Serum",
+            "COMMON_TEST_RANK": 22,
+        },
+        {
+            "LOINC_NUM": "1968-7",
+            "core_analyte": "Direct Bilirubin",
+            "strict_synonyms": [
+                "Direct Bilirubin",
+                "Bilirubin Direct",
+                "Conjugated Bilirubin",
+            ],
+            "lenient_synonyms": ["Bilirubin", "Total Bilirubin"],
+            "LONG_COMMON_NAME": "Bilirubin.direct [Mass/volume] in Serum",
+            "COMMON_TEST_RANK": 131,
+        },
+        {
+            "LOINC_NUM": "1971-1",
+            "core_analyte": "Indirect Bilirubin",
+            "strict_synonyms": [
+                "Indirect Bilirubin",
+                "Bilirubin Indirect",
+                "Unconjugated Bilirubin",
+            ],
+            "lenient_synonyms": ["Bilirubin", "Total Bilirubin"],
+            "LONG_COMMON_NAME": "Bilirubin.indirect [Mass/volume] in Serum",
+            "COMMON_TEST_RANK": 250,
+        },
+    ]
+    idx = index.AnalytesIndex()
+    idx.load_data(records)
+
+    total_res = idx.search_by_analyte("Bilirubin (Total)")
+    self.assertLen(total_res, 1)
+    self.assertEqual(total_res[0].loinc_num, "1975-2")
+
+    direct_res = idx.search_by_analyte("Bilirubin (Direct)")
+    self.assertLen(direct_res, 1)
+    self.assertEqual(direct_res[0].loinc_num, "1968-7")
+
+    indirect_res = idx.search_by_analyte("Bilirubin (Indirect)")
+    self.assertLen(indirect_res, 1)
+    self.assertEqual(indirect_res[0].loinc_num, "1971-1")
+
+    self.assertEqual(
+        normalize.normalize_analyte("Bilirubin (Total)"),
+        "Bilirubin Total",
+    )
+    self.assertEqual(
+        normalize.create_analyte_signature("Bilirubin (Total)"),
+        "bilirubin_total",
+    )
+    self.assertEqual(
+        normalize.create_analyte_signature("(CD4) / (CD8)"),
+        "cd4/cd8",
+    )
+    self.assertEqual(
+        normalize.create_analyte_signature("Na (+)"),
+        "na+",
+    )
 
 
 if __name__ == "__main__":

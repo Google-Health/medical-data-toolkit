@@ -142,6 +142,7 @@ class CompositeDocumentStandardizer:
         in (
             document_types.MedicalDocumentType.NON_MEDICAL,
             document_types.MedicalDocumentType.SMART_REPORT,
+            document_types.MedicalDocumentType.RADIOLOGY_IMAGE,
         )
         for seg in unsupported_segments
     )

@@ -153,11 +153,11 @@ To run the builder in a standard Python environment (simulating open source):
 ```bash
 python -m venv venv
 source venv/bin/activate  # Or venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -r src/document_to_fhir/core/medical_coding/snomed/requirements.txt
 python -m src.document_to_fhir.core.medical_coding.snomed.vaccine.axes_kb.builder_main \
   --input_csv_path="/path/to/snomed_vaccine_raw.csv" \
-  --snomed_code_col_name="snomed_code" \
-  --preferred_term_col_name="preferred_display_term" \
+  --input_snomed_code_col_name="snomed_code" \
+  --input_preferred_term_col_name="preferred_display_term" \
   --output_tsv_path="/path/to/output/SnomedVaccineIndex.tsv" \
   --client_type="gemini" \
   --model_name="gemini-3.6-flash"
@@ -165,12 +165,12 @@ python -m src.document_to_fhir.core.medical_coding.snomed.vaccine.axes_kb.builde
 
 ### Configuration Flags
 
-| Flag                       | Default                      | Description                                                                            |
-| :------------------------- | :--------------------------- | :------------------------------------------------------------------------------------- |
-| `--input_csv_path`         | (Required)                   | Path to the source input CSV containing SNOMED vaccine codes and preferred terms.      |
-| `--snomed_code_col_name`    | (Required)                   | Name of the column in the input CSV containing the SNOMED code.                        |
-| `--preferred_term_col_name` | (Required)                   | Name of the column in the input CSV containing the preferred display term.             |
-| `--output_tsv_path`        | (Required)                   | Filepath where the final post-processed TSV will be saved.                             |
+| Flag                             | Default                      | Description                                                                            |
+| :------------------------------- | :--------------------------- | :------------------------------------------------------------------------------------- |
+| `--input_csv_path`               | (Required)                   | Path to the source input CSV containing SNOMED vaccine codes and preferred terms.      |
+| `--input_snomed_code_col_name`   | (Required)                   | Name of the column in the input CSV containing the SNOMED code.                        |
+| `--input_preferred_term_col_name` | (Required)                  | Name of the column in the input CSV containing the preferred display term.             |
+| `--output_tsv_path`              | (Required)                   | Filepath where the final post-processed TSV will be saved.                             |
 | `--client_type`            | (Required)                   | Type of LLM client to use (`gemini`, `gemma`, `litellm`).                              |
 | `--model_name`             | (Required)                   | LLM model name.                                                                        |
 | `--api_key`                | (`$API_KEY` / `$GEMINI_API_KEY`) | API Key for the LLM client. Defaults to environment variables.                         |

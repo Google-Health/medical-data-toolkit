@@ -90,32 +90,39 @@ ACTIVE_LEARNING_REPLACEMENTS = {
 }
 
 
+_SEMANTIC_SYMBOLS_RE = re.compile(r"\s*([/:%#+])\s*")
+_NON_SEMANTIC_PUNCTUATION_RE = re.compile(r"[,\.\-\(\)\[\]]")
+
+
 # =====================================================================
-# NORMALIZATION ENGINE
+# NORMALIZATION & SIGNATURE ENGINE
 # =====================================================================
 
 
 def normalize_analyte(analyte: str) -> str:
-  """Normalizes a raw analyte string by applying a series of replacements.
+  """Normalizes a raw analyte string into a clean, human-readable analyte name.
 
   This function standardizes immune markers, removes taxonomic modifiers,
-  and cleans up extra whitespace to produce a more consistent analyte name.
+  normalizes semantic symbols and non-semantic punctuation, and cleans up extra
+  whitespace.
   The normalization process follows these steps:
   1.  Apply active learning edge cases from `ACTIVE_LEARNING_REPLACEMENTS`.
   2.  Standardize immune markers using `IMMUNE_MARKER_MAP`.
   3.  Strip taxonomic modifiers listed in `TAXONOMIC_MODIFIERS_TO_REMOVE`.
-  4.  Remove any resulting extra whitespaces.
+  4.  Replace non-semantic punctuation (`,`, `.`, `-`, `()`, `[]`) with spaces.
+  5.  Bind semantic symbols (`/`, `:`, `%`, `#`, `+`).
+  6.  Remove any resulting extra whitespaces.
 
   Args:
     analyte: The raw analyte string to be normalized.
 
   Returns:
-    The normalized analyte string.
+    The normalized human-readable analyte string.
   """
   if not analyte:
     return ""
 
-  normalized_text = analyte
+  normalized_text = str(analyte)
 
   # 1. Apply Active Learning Edge Cases First
   for pattern, replacement in ACTIVE_LEARNING_REPLACEMENTS.items():
@@ -133,7 +140,38 @@ def normalize_analyte(analyte: str) -> str:
   for pattern in TAXONOMIC_MODIFIERS_TO_REMOVE:
     normalized_text = re.sub(pattern, "", normalized_text, flags=re.IGNORECASE)
 
-  # 4. Cleanup: Remove extra whitespaces left behind by deletions
+  # 4. Strip Non-Semantic Punctuation
+  # Replace commas, periods, hyphens, parentheses, and brackets with spaces.
+  # This solves "1,25-Dihydroxy" vs "1 25 Dihydroxy" and
+  # "Bilirubin (Total)" vs "Bilirubin Total".
+  normalized_text = _NON_SEMANTIC_PUNCTUATION_RE.sub(" ", normalized_text)
+
+  # 5. Normalize Semantic Symbols
+  # Remove spaces around critical symbols (/, :, %, #, +) so they bind to the
+  # analyte. Examples: "(CD4) / (CD8)" -> "CD4/CD8", "Na (+)" -> "Na+"
+  normalized_text = _SEMANTIC_SYMBOLS_RE.sub(r"\1", normalized_text)
+
+  # 6. Cleanup: Remove extra whitespaces left behind by deletions
   normalized_text = re.sub(r"\s+", " ", normalized_text).strip()
 
   return normalized_text
+
+
+def create_analyte_signature(analyte: str) -> str:
+  """Transforms clinical lab text into an order-invariant lookup signature.
+
+  Normalizes the analyte text using domain-specific rules, lowercases it,
+  deduplicates and sorts tokens alphabetically, and joins them with underscores.
+
+  Args:
+    analyte: The input clinical lab text.
+
+  Returns:
+    A normalized signature string suitable for index lookup.
+  """
+  normalized = normalize_analyte(analyte).lower()
+  if not normalized:
+    return ""
+  signature_tokens = sorted(set(normalized.split()))
+  return "_".join(signature_tokens)
+

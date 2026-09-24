@@ -714,6 +714,52 @@ class CompositeDocumentStandardizerTest(absltest.TestCase):
     self.assertEqual(to_process, [])
     self.assertEqual(to_pass_through, [mock_seg_smart_report, mock_seg_presc])
 
+  def test_partition_segments_allow_unsupported_non_medical_with_radiology_image(
+      self,
+  ):
+    mock_seg_lab = mock.Mock(
+        document_type=document_types.MedicalDocumentType.LABORATORY_REPORT
+    )
+    mock_seg_radiology_image = mock.Mock(
+        document_type=document_types.MedicalDocumentType.RADIOLOGY_IMAGE
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_lab, mock_seg_radiology_image]
+    )
+    self.assertEqual(to_process, [mock_seg_lab])
+    self.assertEqual(to_pass_through, [mock_seg_radiology_image])
+
+  def test_partition_segments_allow_unsupported_non_medical_with_radiology_image_and_medical_non_lab(
+      self,
+  ):
+    mock_seg_radiology_image = mock.Mock(
+        document_type=document_types.MedicalDocumentType.RADIOLOGY_IMAGE
+    )
+    mock_seg_presc = mock.Mock(
+        document_type=document_types.MedicalDocumentType.PRESCRIPTION
+    )
+    standardizer = composite_document_standardizer.CompositeDocumentStandardizer(
+        classifier=self.mock_classifier,
+        standardizers=self.standardizers,
+        document_standardization_policy=(
+            document_types.DocumentStandardizationPolicy.ALLOW_UNSUPPORTED_NON_MEDICAL
+        ),
+    )
+    to_process, to_pass_through = standardizer._partition_segments(
+        [mock_seg_radiology_image, mock_seg_presc]
+    )
+    self.assertEqual(to_process, [])
+    self.assertEqual(
+        to_pass_through, [mock_seg_radiology_image, mock_seg_presc]
+    )
+
 
 if __name__ == "__main__":
   absltest.main()

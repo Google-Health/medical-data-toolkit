@@ -23,21 +23,6 @@ class BrandIndex(snomed_drug_index.SnomedDrugIndex):
   """Index for SNOMED-CT India Extension Branded Drug Codes."""
 
   @classmethod
-  def from_index_file(cls, path: str) -> "BrandIndex":
-    """Loads and builds a BrandIndex from an index file.
-
-    Args:
-      path: The path to the input index file (csv/txt).
-
-    Returns:
-      An instance of BrandIndex populated with data from the index file.
-
-    Raises:
-      FileNotFoundError: If the specified path does not exist.
-    """
-    return super().from_index_file(path, on_bad_lines="skip")
-
-  @classmethod
   def _preprocess(
       cls, df: pd.DataFrame
   ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:

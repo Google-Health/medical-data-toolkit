@@ -54,6 +54,7 @@ class SnomedDrugIndex:
         "sep": "\t",
         "index_col": False,
         "dtype": str,
+        "on_bad_lines": "skip",
     }
     read_csv_args.update(kwargs)
 

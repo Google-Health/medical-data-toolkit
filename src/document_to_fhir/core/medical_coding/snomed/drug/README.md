@@ -85,7 +85,7 @@ To run the builder in a standard Python environment (simulating open source):
 ```bash
 python -m venv venv
 source venv/bin/activate  # Or venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -r src/document_to_fhir/core/medical_coding/snomed/requirements.txt
 python -m src.document_to_fhir.core.medical_coding.snomed.drug.axes_kb.substance_variations.builder_main \
   --substance_kb_path="/path/to/SubstanceMaster.txt" \
   --generic_kb_path="/path/to/GenericMaster.txt" \
@@ -96,18 +96,11 @@ python -m src.document_to_fhir.core.medical_coding.snomed.drug.axes_kb.substance
 
 | Flag                  | Default                   | Description              |
 | :-------------------- | :------------------------ | :----------------------- |
-| `--substance_kb_path` | (Required)                | Path to the source       |
-:                       :                           : SNOMED Substance KB file :
-:                       :                           : (`SubstanceMaster.txt`). :
-| `--generic_kb_path`   | (Required)                | Path to the source       |
-:                       :                           : SNOMED Generic KB file   :
-:                       :                           : (`GenericMaster.txt`).   :
-| `--output_folder` | (Required)                | Folder path where output |
-:                       :                           : CSV will be saved.       :
-| `--filename`          | `SubstanceVariations.txt` | Output CSV filename.     |
-| `--limit`             | `0`                       | Max number of substances |
-:                       :                           : to process (`0` for      :
-:                       :                           : all).                    :
+| `--substance_kb_path` | (Required)                | Path to the source SNOMED Substance KB file (`SubstanceMaster.txt`). |
+| `--generic_kb_path`   | (Required)                | Path to the source SNOMED Generic KB file (`GenericMaster.txt`). |
+| `--output_folder`     | (Required)                | Folder path where output CSV will be saved. |
+| `--filename`          | `SubstanceVariations.txt` | Output CSV filename. |
+| `--limit`             | `0`                       | Max number of substances to process (`0` for all). |
 
 --------------------------------------------------------------------------------
 

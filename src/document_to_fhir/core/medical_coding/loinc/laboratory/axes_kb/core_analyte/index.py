@@ -21,19 +21,14 @@ and their synonyms.
 import ast
 import collections
 import logging
-import re
 from typing import Any, Iterable
 
 import pandas
 
 from src.document_to_fhir.core.medical_coding.loinc import config
-from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import normalize
 from src.document_to_fhir.core.medical_coding.loinc.common import schema
 from src.document_to_fhir.core.medical_coding.loinc.common import utils
-
-
-_SEMANTIC_SYMBOLS_RE = re.compile(r"\s*([/:%#+])\s*")
-_NON_SEMANTIC_PUNCTUATION_RE = re.compile(r"[,\.\-]")
+from src.document_to_fhir.core.medical_coding.loinc.laboratory.axes_kb.core_analyte import normalize
 
 
 def _file_exists(csv_path: str) -> bool:
@@ -134,7 +129,7 @@ class AnalytesIndex:
     Returns:
       A list of matching LoincRow records.
     """
-    signature = self._create_analyte_signature(analyte_name)
+    signature = normalize.create_analyte_signature(analyte_name)
     results = self._strict_signature_to_records.get(signature, [])
     if not results and allow_lenient:
       results = self._lenient_signature_to_records.get(signature, [])
@@ -195,14 +190,14 @@ class AnalytesIndex:
       strict_terms = {core} | self._core_analyte_to_synonyms_map[core]
       for term in strict_terms:
         if term:
-          signature = self._create_analyte_signature(term)
+          signature = normalize.create_analyte_signature(term)
           strict_sig_to_loincs[signature].add(loinc_num)
 
       # 2. Index lenient terms (broad parent substances, categories)
       lenient_terms = set(record.get(config.LENIENT_SYNONYMS_KEY) or [])
       for term in lenient_terms:
         if term:
-          signature = self._create_analyte_signature(term)
+          signature = normalize.create_analyte_signature(term)
           if loinc_num not in strict_sig_to_loincs.get(signature, set()):
             lenient_sig_to_loincs[signature].add(loinc_num)
 
@@ -215,43 +210,6 @@ class AnalytesIndex:
       self._lenient_signature_to_records[signature] = [
           loinc_to_record[num] for num in loinc_nums
       ]
-
-  def _create_analyte_signature(self, analyte_name: str) -> str:
-    """Standardizes clinical lab text into a normalized signature.
-
-    This method transforms clinical lab text into a robust signature suitable
-    for database mapping (like LOINC) by performing several normalization steps.
-
-    Args:
-      analyte_name: The input clinical lab text.
-
-    Returns:
-      A normalized signature string.
-    """
-    if not analyte_name:
-      return ""
-
-    # 1. Normalize analyte using domain-specific rules.
-    analyte_name = normalize.normalize_analyte(analyte_name)
-
-    # 2. Convert to lowercase.
-    analyte_name = str(analyte_name).lower()
-
-    # 3. Normalize Semantic Symbols
-    # Remove spaces around critical symbols (/, :, %, #, +) so they bind to the
-    # analyte. Examples: "CD4 / CD8" -> "cd4/cd8", "Na +" -> "na+"
-    analyte_name = _SEMANTIC_SYMBOLS_RE.sub(r"\1", analyte_name)
-
-    # 4. Strip Non-Semantic Punctuation
-    # Replace commas, periods, and hyphens with spaces.
-    # This solves the "1,25-Dihydroxy" vs "1 25 Dihydroxy" problem.
-    analyte_name = _NON_SEMANTIC_PUNCTUATION_RE.sub(" ", analyte_name)
-
-    # 5. Tokenize, de-duplicate, and sort for a stable signature.
-    signature_tokens = sorted(list(set(analyte_name.split())))
-
-    # 6. Join with an underscore for readability and uniqueness.
-    return "_".join(signature_tokens)
 
   def _parse_synonyms(self, raw_synonyms: Any) -> list[str]:
     """Parses raw synonyms into a list of strings."""
