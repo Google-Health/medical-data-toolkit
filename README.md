@@ -167,6 +167,32 @@ docker system prune --all --force
 
 ```
 
+## Citation
+
+If you use any part of this library, please cite or acknowledge it on your page
+or in your work:
+
+**For Web Pages & READMEs (Markdown):**
+
+```markdown
+This project uses the [Medical Data Toolkit](https://github.com/Google-Health/medical-data-toolkit) open-source library by Google Health.
+```
+
+**For Papers & Technical Reports (APA / BibTeX):**
+
+> Medical Data Toolkit Authors (2026). *Medical Data Toolkit*. Google Health.
+> https://github.com/Google-Health/medical-data-toolkit
+
+```bibtex
+@software{medical_data_toolkit_2026,
+  author = {{Medical Data Toolkit Authors}},
+  title = {{Medical Data Toolkit}},
+  url = {https://github.com/Google-Health/medical-data-toolkit},
+  publisher = {Google Health},
+  year = {2026}
+}
+```
+
 ## License
 
 This project is licensed under the Apache 2.0 license, see [LICENSE](LICENSE).
